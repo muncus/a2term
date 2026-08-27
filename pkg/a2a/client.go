@@ -272,6 +272,11 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 			}
 		case *a2a.TaskStatusUpdateEvent:
 			isFinal := ev.Status.State.Terminal()
+			if isFinal {
+				c.mu.Lock()
+				c.taskID = ""
+				c.mu.Unlock()
+			}
 			if ev.Status.Message != nil {
 				text := ExtractText(ev.Status.Message)
 				if text != "" {
@@ -292,6 +297,12 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 				}
 			}
 		case *a2a.Task:
+			isTerminal := ev.Status.State.Terminal()
+			if isTerminal {
+				c.mu.Lock()
+				c.taskID = ""
+				c.mu.Unlock()
+			}
 			var text string
 			if ev.Status.Message != nil {
 				text = ExtractText(ev.Status.Message)
@@ -316,7 +327,6 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 			if text != "" {
 				accumulated.WriteString(text)
 			}
-			isTerminal := ev.Status.State.Terminal()
 			onChunk(accumulated.String(), isTerminal, nil)
 			if isTerminal {
 				return nil
@@ -347,6 +357,12 @@ func (c *Client) processResult(result a2a.SendMessageResult) (string, error) {
 	case *a2a.Message:
 		return ExtractText(r), nil
 	case *a2a.Task:
+		if r.Status.State.Terminal() {
+			c.mu.Lock()
+			c.taskID = ""
+			c.mu.Unlock()
+		}
+
 		// 1. Check Status.Message
 		if r.Status.Message != nil {
 			txt := ExtractText(r.Status.Message)

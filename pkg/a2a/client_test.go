@@ -3,6 +3,7 @@ package a2a_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -232,5 +233,138 @@ func TestClientWithTaskArtifacts(t *testing.T) {
 
 	if reply != "ADK Agent Output via Artifacts" {
 		t.Errorf("expected 'ADK Agent Output via Artifacts', got %q", reply)
+	}
+}
+
+func TestClientOmitTaskIDOnTerminalState(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var serverURL string
+	mux.HandleFunc("/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
+		card := a2a.AgentCard{
+			Name:        "Terminal State Test Agent",
+			Description: "Mock agent testing terminal state transitions",
+			SupportedInterfaces: []*a2a.AgentInterface{
+				{
+					URL:             serverURL,
+					ProtocolBinding: a2a.TransportProtocolJSONRPC,
+					ProtocolVersion: a2a.Version,
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(card)
+	})
+
+	var step int
+	var receivedTaskIDs []string
+	var receivedContextIDs []string
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		params, _ := req["params"].(map[string]any)
+		msg, _ := params["message"].(map[string]any)
+		taskID, _ := msg["taskId"].(string)
+		ctxID, _ := msg["contextId"].(string)
+
+		receivedTaskIDs = append(receivedTaskIDs, taskID)
+		receivedContextIDs = append(receivedContextIDs, ctxID)
+
+		step++
+		var taskState string
+		if step == 1 {
+			taskState = "TASK_STATE_WORKING"
+		} else if step == 2 {
+			taskState = "TASK_STATE_COMPLETED"
+		} else {
+			taskState = "TASK_STATE_COMPLETED"
+		}
+
+		resp := map[string]any{
+			"jsonrpc": "2.0",
+			"id":      req["id"],
+			"result": map[string]any{
+				"task": map[string]any{
+					"id":        fmt.Sprintf("task-%d", step),
+					"contextId": "thread-123",
+					"status": map[string]any{
+						"state": taskState,
+					},
+					"artifacts": []map[string]any{
+						{
+							"artifactId": "art-1",
+							"parts": []map[string]any{
+								{"text": fmt.Sprintf("Response for step %d", step)},
+							},
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	ctx := context.Background()
+	client, err := a2aclient.NewClient(ctx, a2aclient.ClientOptions{
+		AgentURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// Message 1: Starts task-1 (working)
+	_, err = client.SendMessage(ctx, "msg 1")
+	if err != nil {
+		t.Fatalf("msg 1 failed: %v", err)
+	}
+	ctxID1, taskID1 := client.CurrentSession()
+	if taskID1 != "task-1" {
+		t.Errorf("expected active taskID 'task-1' after working response, got %q", taskID1)
+	}
+	if ctxID1 != "thread-123" {
+		t.Errorf("expected contextID 'thread-123', got %q", ctxID1)
+	}
+
+	// Message 2: Continues task-1, which returns COMPLETED
+	_, err = client.SendMessage(ctx, "msg 2")
+	if err != nil {
+		t.Fatalf("msg 2 failed: %v", err)
+	}
+	ctxID2, taskID2 := client.CurrentSession()
+	if taskID2 != "" {
+		t.Errorf("expected empty taskID after terminal COMPLETED state, got %q", taskID2)
+	}
+	if ctxID2 != "thread-123" {
+		t.Errorf("expected contextID 'thread-123' to be retained, got %q", ctxID2)
+	}
+
+	// Message 3: Next message should omit taskId so server starts fresh task
+	_, err = client.SendMessage(ctx, "msg 3")
+	if err != nil {
+		t.Fatalf("msg 3 failed: %v", err)
+	}
+
+	// Verify what server received on message 3:
+	if len(receivedTaskIDs) != 3 {
+		t.Fatalf("expected 3 requests received, got %d", len(receivedTaskIDs))
+	}
+	if receivedTaskIDs[0] != "" {
+		t.Errorf("step 1: expected empty initial taskId, got %q", receivedTaskIDs[0])
+	}
+	if receivedTaskIDs[1] != "task-1" {
+		t.Errorf("step 2: expected taskId 'task-1', got %q", receivedTaskIDs[1])
+	}
+	if receivedTaskIDs[2] != "" {
+		t.Errorf("step 3: expected omitted/empty taskId for new task, got %q", receivedTaskIDs[2])
+	}
+	if receivedContextIDs[2] != "thread-123" {
+		t.Errorf("step 3: expected contextId 'thread-123' preserved, got %q", receivedContextIDs[2])
 	}
 }
