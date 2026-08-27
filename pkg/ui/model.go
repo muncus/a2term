@@ -248,3 +248,15 @@ func (m *Model) ReturnFocusToInput() tea.Cmd {
 	return m.input.Focus()
 }
 
+// surfaceInnerWidth computes the available inner width for an A2UI surface inside the surface container box.
+// Outer SurfaceContainer width is (totalWidth - 4). The container has 2 cells border + 2 cells padding = 4 cells chrome,
+// so inner width available to the surface without wrapping is totalWidth - 8.
+func surfaceInnerWidth(totalWidth int) int {
+	w := totalWidth - 8
+	if w < 4 {
+		return 4
+	}
+	return w
+}
+
+

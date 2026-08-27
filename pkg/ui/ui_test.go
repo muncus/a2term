@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/joestump-agent/a2tea/event"
 	tmca2ui "github.com/tmc/a2ui"
 
@@ -593,5 +594,44 @@ func TestModelEnsureFocusedSurfaceVisibleOnFocusChange(t *testing.T) {
 		t.Errorf("expected viewport at bottom when returning to input")
 	}
 }
+
+func TestModelSurfaceCardBorderNoWrap(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	width := 80
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+
+	cardJSON := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "test-card",
+    "components": [
+      { "component": "Card", "id": "root", "child": "btn" },
+      { "component": "Button", "id": "btn", "action": { "event": { "name": "click" } }, "child": "btn_lbl" },
+      { "component": "Text", "id": "btn_lbl", "text": "Click Me" }
+    ]
+  }
+}
+</a2ui-json>`
+
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(cardJSON))
+	viewOutput := updated.(ui.Model).View().Content
+
+	lines := strings.Split(viewOutput, "\n")
+	for i, line := range lines {
+		lineWidth := lipgloss.Width(line)
+		if lineWidth > width {
+			t.Errorf("line %d exceeds screen width %d: actual width %d, line: %q", i, width, lineWidth, line)
+		}
+		// Ensure that card top corner ╭ and bottom corner ╰ don't get broken/wrapped
+		if strings.Contains(line, "╭") && !strings.Contains(line, "╮") {
+			t.Errorf("line %d has opening card border ╭ without closing ╮ (broken/wrapped line): %q", i, line)
+		}
+		if strings.Contains(line, "╰") && !strings.Contains(line, "╯") {
+			t.Errorf("line %d has opening card border ╰ without closing ╯ (broken/wrapped line): %q", i, line)
+		}
+	}
+}
+
 
 

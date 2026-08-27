@@ -67,9 +67,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.SetWidth(msg.Width - 6)
 
 		// Update sizes of all active surfaces
+		surfWidth := surfaceInnerWidth(msg.Width)
 		for _, item := range m.items {
 			if item.Kind == KindAgentSurface && item.Surface != nil {
-				item.Surface.SetSize(msg.Width-4, vpHeight)
+				item.Surface.SetSize(surfWidth, vpHeight)
 			}
 		}
 
@@ -176,7 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for _, seg := range segments {
 					if seg.Type == a2ui.TypeSurface && seg.Surface != nil {
 						if m.ready {
-							seg.Surface.SetSize(m.width-4, m.viewport.Height())
+							seg.Surface.SetSize(surfaceInnerWidth(m.width), m.viewport.Height())
 						}
 						m.items = append(m.items, NewAgentSurfaceItem(uuid.NewString(), "surface", seg.Surface, seg.Messages))
 					} else if seg.Text != "" {
@@ -218,7 +219,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					for _, seg := range segments {
 						if seg.Type == a2ui.TypeSurface && seg.Surface != nil {
 							if m.ready {
-								seg.Surface.SetSize(m.width-4, m.viewport.Height())
+								seg.Surface.SetSize(surfaceInnerWidth(m.width), m.viewport.Height())
 							}
 							m.items = append(m.items, NewAgentSurfaceItem(uuid.NewString(), "surface", seg.Surface, seg.Messages))
 						} else if seg.Text != "" {
