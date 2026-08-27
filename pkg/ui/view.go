@@ -320,3 +320,94 @@ func (m *Model) ensureLineRangeVisible(startLine, endLine int) {
 	// 3. Otherwise, already visible on screen!
 }
 
+// findItemAtContentLine returns the index of the FeedItem that renders on the given
+// 0-indexed line of the viewport content, or -1 if line is out of range.
+func (m *Model) findItemAtContentLine(targetLine int) int {
+	if targetLine < 0 {
+		return -1
+	}
+
+	currentLine := 0
+	for i, item := range m.items {
+		var itemStr string
+		switch item.Kind {
+		case KindUser:
+			role := m.styles.UserRole.Render(fmt.Sprintf("👤 You (%s)", item.Timestamp.Format("15:04")))
+			text := m.styles.UserText.Render(item.Content)
+			msg := fmt.Sprintf("%s\n%s", role, text)
+			itemStr = m.styles.UserMessageBox.Width(m.width - 4).Render(msg) + "\n"
+
+		case KindAgentText:
+			role := m.styles.AgentRole.Render(fmt.Sprintf("🤖 Agent (%s)", item.Timestamp.Format("15:04")))
+			text := m.styles.AgentText.Render(item.Content)
+			msg := fmt.Sprintf("%s\n%s", role, text)
+			itemStr = m.styles.AgentMessageBox.Width(m.width - 4).Render(msg) + "\n"
+
+		case KindAgentSurface:
+			isFocused := (m.focusMode == FocusSurface && m.focusedSurfaceIndex == i)
+			var badge string
+			if isFocused {
+				badge = m.styles.SurfaceFocusedBadge.Render("🎮 A2UI SURFACE [ACTIVE FOCUS - Tab moves focus, Enter activates]")
+			} else {
+				badge = m.styles.SurfaceBadge.Render("📦 A2UI SURFACE [Press Tab to interact]")
+			}
+
+			surfaceContent := item.Surface.View().Content
+			combined := fmt.Sprintf("%s\n\n%s", badge, surfaceContent)
+
+			var containerText string
+			if isFocused {
+				containerText = m.styles.SurfaceFocusedContainer.Width(m.width - 4).Render(combined)
+			} else {
+				containerText = m.styles.SurfaceContainer.Width(m.width - 4).Render(combined)
+			}
+			itemStr = containerText + "\n"
+
+		case KindSystem:
+			itemStr = m.styles.SystemMessage.Render("ℹ️ " + item.Content) + "\n\n"
+
+		case KindAction:
+			itemStr = m.styles.ActionMessage.Render(item.Content) + "\n"
+
+		case KindError:
+			itemStr = m.styles.ErrorMessage.Render("❌ " + item.Content) + "\n"
+
+		case KindDiagnostic:
+			if item.Diagnostic != nil {
+				d := item.Diagnostic
+				var diagLines []string
+				diagLines = append(diagLines, m.styles.DiagnosticTitle.Render(fmt.Sprintf("⚠️ DIAGNOSTIC: %s", d.Title)))
+				if d.TargetURL != "" {
+					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Target URL:"), m.styles.DiagnosticValue.Render(d.TargetURL)))
+				}
+				if d.Phase != "" {
+					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Phase:"), m.styles.DiagnosticValue.Render(d.Phase)))
+				}
+				if d.ErrorMsg != "" {
+					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Error:"), m.styles.DiagnosticValue.Render(d.ErrorMsg)))
+				}
+				if d.Details != "" {
+					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Details:"), m.styles.DiagnosticValue.Render(d.Details)))
+				}
+				if len(d.Tips) > 0 {
+					diagLines = append(diagLines, "")
+					diagLines = append(diagLines, m.styles.DiagnosticLabel.Render("Troubleshooting Tips:"))
+					for _, tip := range d.Tips {
+						diagLines = append(diagLines, m.styles.DiagnosticTip.Render("  • "+tip))
+					}
+				}
+				content := strings.Join(diagLines, "\n")
+				itemStr = m.styles.DiagnosticBox.Width(m.width - 4).Render(content) + "\n"
+			}
+		}
+
+		lineCount := strings.Count(itemStr, "\n")
+		if targetLine >= currentLine && targetLine < currentLine+lineCount {
+			return i
+		}
+		currentLine += lineCount
+	}
+	return -1
+}
+
+

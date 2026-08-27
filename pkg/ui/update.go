@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/google/uuid"
 	"github.com/joestump-agent/a2tea/event"
 	"github.com/joestump-agent/a2tea/render"
@@ -156,8 +157,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.clearToastAfter(3*time.Second))
 		return m, tea.Batch(cmds...)
 
-	// Mouse events for scrolling
-	case tea.MouseWheelMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseMotionMsg:
+	// Mouse events for click-to-focus and scrolling
+	case tea.MouseClickMsg:
+		return m.handleMouseClick(msg)
+
+	case tea.MouseWheelMsg, tea.MouseReleaseMsg, tea.MouseMotionMsg:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
@@ -758,5 +762,51 @@ func (m Model) updateSurfaceWithArrowNav(surf render.Model, msg tea.KeyPressMsg)
 
 	return resSurf, cmd
 }
+
+func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	headerHeight := lipgloss.Height(m.renderHeader())
+	vpHeight := m.viewport.Height()
+
+	// Only respond to left clicks for focus switching
+	if msg.Button == tea.MouseLeft || msg.Button == tea.MouseNone || msg.Button == 0 {
+		// 1. Click below the viewport (Input box, Toast, or Footer) -> focus chat input
+		if msg.Y >= headerHeight+vpHeight {
+			cmd := m.ReturnFocusToInput()
+			m.updateViewportContent()
+			return m, cmd
+		}
+
+		// 2. Click inside viewport -> check if an A2UI surface was clicked
+		if msg.Y >= headerHeight && msg.Y < headerHeight+vpHeight {
+			vpRow := msg.Y - headerHeight
+			contentLine := m.viewport.YOffset() + vpRow
+			itemIdx := m.findItemAtContentLine(contentLine)
+
+			if itemIdx >= 0 && itemIdx < len(m.items) {
+				if m.items[itemIdx].Kind == KindAgentSurface && m.items[itemIdx].Surface != nil {
+					var cmds []tea.Cmd
+					// Blur previous focused surface if different
+					if m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) && m.focusedSurfaceIndex != itemIdx && m.items[m.focusedSurfaceIndex].Surface != nil {
+						m.items[m.focusedSurfaceIndex].Surface.Blur()
+					}
+					m.input.Blur()
+					m.focusMode = FocusSurface
+					m.focusedSurfaceIndex = itemIdx
+					if cmd := m.items[itemIdx].Surface.Focus(); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+					m.updateViewportContent()
+					return m, tea.Batch(cmds...)
+				}
+			}
+		}
+	}
+
+	// Also forward mouse click to viewport for standard selection / handling
+	var cmd tea.Cmd
+	m.viewport, cmd = m.viewport.Update(msg)
+	return m, cmd
+}
+
 
 

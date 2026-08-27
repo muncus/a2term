@@ -633,5 +633,104 @@ func TestModelSurfaceCardBorderNoWrap(t *testing.T) {
 	}
 }
 
+func TestModelMouseClickToFocusSurfaceAndInput(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	surfaceJSON := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "surf1",
+    "components": [
+      { "component": "Card", "id": "root", "child": "btn" },
+      { "component": "Button", "id": "btn", "action": { "event": { "name": "test" } }, "child": "lbl" },
+      { "component": "Text", "id": "lbl", "text": "Click Target" }
+    ]
+  }
+}
+</a2ui-json>`
+
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surfaceJSON))
+	model := updated.(ui.Model)
+
+	if model.FocusMode() != ui.FocusInput {
+		t.Fatalf("expected initial FocusInput, got %v", model.FocusMode())
+	}
+
+	// Click on the surface in the viewport (Y=10, which corresponds to the surface at index 2)
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 15, Y: 10, Button: tea.MouseLeft})
+	model = updated.(ui.Model)
+
+	if model.FocusMode() != ui.FocusSurface {
+		t.Errorf("expected FocusSurface after clicking surface, got %v", model.FocusMode())
+	}
+	if model.FocusedSurfaceIndex() != 2 {
+		t.Errorf("expected FocusedSurfaceIndex == 2, got %d", model.FocusedSurfaceIndex())
+	}
+
+	// Click at the bottom (Y=23, input box region)
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 15, Y: 23, Button: tea.MouseLeft})
+	model = updated.(ui.Model)
+
+	if model.FocusMode() != ui.FocusInput {
+		t.Errorf("expected FocusInput after clicking bottom input box, got %v", model.FocusMode())
+	}
+	if model.FocusedSurfaceIndex() != -1 {
+		t.Errorf("expected FocusedSurfaceIndex == -1, got %d", model.FocusedSurfaceIndex())
+	}
+}
+
+func TestModelMouseClickBetweenMultipleSurfaces(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+
+	surface1 := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "surf1",
+    "components": [
+      { "component": "Card", "id": "root", "child": "b1" },
+      { "component": "Button", "id": "b1", "action": { "event": { "name": "a1" } }, "child": "t1" },
+      { "component": "Text", "id": "t1", "text": "First Surface Button" }
+    ]
+  }
+}
+</a2ui-json>`
+
+	surface2 := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "surf2",
+    "components": [
+      { "component": "Card", "id": "root", "child": "b2" },
+      { "component": "Button", "id": "b2", "action": { "event": { "name": "a2" } }, "child": "t2" },
+      { "component": "Text", "id": "t2", "text": "Second Surface Button" }
+    ]
+  }
+}
+</a2ui-json>`
+
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surface1))
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surface2))
+
+	// Click on second surface (lower down in viewport, Y=20, index 3)
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 10, Y: 20, Button: tea.MouseLeft})
+	model := updated.(ui.Model)
+	if model.FocusMode() != ui.FocusSurface || model.FocusedSurfaceIndex() != 3 {
+		t.Errorf("expected surface index 3 focused, got mode=%v idx=%d", model.FocusMode(), model.FocusedSurfaceIndex())
+	}
+
+	// Click on first surface (higher up in viewport, Y=10, index 2)
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 10, Y: 10, Button: tea.MouseLeft})
+	model = updated.(ui.Model)
+	if model.FocusMode() != ui.FocusSurface || model.FocusedSurfaceIndex() != 2 {
+		t.Errorf("expected surface index 2 focused, got mode=%v idx=%d", model.FocusMode(), model.FocusedSurfaceIndex())
+	}
+}
+
+
 
 
