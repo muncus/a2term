@@ -233,6 +233,7 @@ func (m *Model) FocusPreviousSurface() tea.Cmd {
 	}
 	m.focusMode = FocusInput
 	m.focusedSurfaceIndex = -1
+	m.viewport.GotoBottom()
 	return m.input.Focus()
 }
 
@@ -243,5 +244,7 @@ func (m *Model) ReturnFocusToInput() tea.Cmd {
 	}
 	m.focusMode = FocusInput
 	m.focusedSurfaceIndex = -1
+	m.viewport.GotoBottom()
 	return m.input.Focus()
 }
+

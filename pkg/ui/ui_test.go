@@ -328,3 +328,270 @@ func TestModelStickyScrollbackDuringUpdates(t *testing.T) {
 		t.Errorf("expected viewport to remain at bottom when user was at bottom")
 	}
 }
+
+func TestModelArrowKeyNavigationInSurface(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	// Add an A2UI surface with 2 buttons
+	a2uiMsg := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "test-surface",
+    "components": [
+      { "component": "Card", "id": "root", "child": "col" },
+      { "component": "Column", "id": "col", "children": ["btn1", "btn2"] },
+      { "component": "Button", "id": "btn1", "action": { "event": { "name": "action1" } }, "child": "t1" },
+      { "component": "Text", "id": "t1", "text": "First Button" },
+      { "component": "Button", "id": "btn2", "action": { "event": { "name": "action2" } }, "child": "t2" },
+      { "component": "Text", "id": "t2", "text": "Second Button" }
+    ]
+  }
+}
+</a2ui-json>`
+
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(a2uiMsg))
+
+	// 1. Initially focus is on input. Pressing Up when input is empty enters the surface!
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+
+	// 2. Pressing Down or Right navigates from btn1 to btn2
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+
+	// 3. Pressing Enter activates btn2
+	var cmd tea.Cmd
+	updated, cmd = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatalf("expected command on Enter activating btn2")
+	}
+
+	msg := cmd()
+	var btnEvent event.ButtonClicked
+	if ev, ok := msg.(event.ButtonClicked); ok {
+		btnEvent = ev
+	} else if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, bcmd := range batch {
+			if bcmd != nil {
+				if ev, ok := bcmd().(event.ButtonClicked); ok {
+					btnEvent = ev
+					break
+				}
+			}
+		}
+	}
+	if btnEvent.ID != "btn2" {
+		t.Errorf("expected activated button to be btn2, got %q", btnEvent.ID)
+	}
+
+	// 4. Pressing Up navigates back to btn1
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	updated, cmd = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		msg2 := cmd()
+		var btnEvent2 event.ButtonClicked
+		if ev, ok := msg2.(event.ButtonClicked); ok {
+			btnEvent2 = ev
+		} else if batch, ok := msg2.(tea.BatchMsg); ok {
+			for _, bcmd := range batch {
+				if bcmd != nil {
+					if ev, ok := bcmd().(event.ButtonClicked); ok {
+						btnEvent2 = ev
+						break
+					}
+				}
+			}
+		}
+		if btnEvent2.ID != "btn1" {
+			t.Errorf("expected activated button after Up to be btn1, got %q", btnEvent2.ID)
+		}
+	}
+
+	// 5. Pressing Right navigates to btn2
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	updated, cmd = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		msg3 := cmd()
+		var btnEvent3 event.ButtonClicked
+		if ev, ok := msg3.(event.ButtonClicked); ok {
+			btnEvent3 = ev
+		} else if batch, ok := msg3.(tea.BatchMsg); ok {
+			for _, bcmd := range batch {
+				if bcmd != nil {
+					if ev, ok := bcmd().(event.ButtonClicked); ok {
+						btnEvent3 = ev
+						break
+					}
+				}
+			}
+		}
+		if btnEvent3.ID != "btn2" {
+			t.Errorf("expected activated button after Right to be btn2, got %q", btnEvent3.ID)
+		}
+	}
+
+	// 6. Pressing Left navigates back to btn1
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	updated, cmd = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		msg4 := cmd()
+		var btnEvent4 event.ButtonClicked
+		if ev, ok := msg4.(event.ButtonClicked); ok {
+			btnEvent4 = ev
+		} else if batch, ok := msg4.(tea.BatchMsg); ok {
+			for _, bcmd := range batch {
+				if bcmd != nil {
+					if ev, ok := bcmd().(event.ButtonClicked); ok {
+						btnEvent4 = ev
+						break
+					}
+				}
+			}
+		}
+		if btnEvent4.ID != "btn1" {
+			t.Errorf("expected activated button after Left to be btn1, got %q", btnEvent4.ID)
+		}
+	}
+}
+
+func TestModelEnsureFocusedElementVisibleOnNavigation(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	// Set small height (12 rows total -> viewport height ~5-6 rows)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+
+	// Add a tall A2UI form with 5 controls spanning multiple lines
+	tallForm := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "tall-form",
+    "components": [
+      { "component": "Card", "id": "root", "child": "col" },
+      { "component": "Column", "id": "col", "children": ["t1", "input1", "input2", "cb1", "slider1", "btn_submit"] },
+      { "component": "Text", "id": "t1", "text": "Header Form Title" },
+      { "component": "TextField", "id": "input1", "label": "First Name" },
+      { "component": "TextField", "id": "input2", "label": "Last Name" },
+      { "component": "CheckBox", "id": "cb1", "label": "Agree to Terms" },
+      { "component": "Slider", "id": "slider1", "label": "Rating", "min": 1, "max": 10, "value": 5 },
+      { "component": "Button", "id": "btn_submit", "action": { "event": { "name": "submit" } }, "child": "btn_lbl" },
+      { "component": "Text", "id": "btn_lbl", "text": "Submit Form" }
+    ]
+  }
+}
+</a2ui-json>`
+
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(tallForm))
+
+	// Focus the surface from input (Up key)
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	model := updated.(ui.Model)
+
+	if model.FocusMode() != ui.FocusSurface {
+		t.Fatalf("expected FocusSurface, got %v", model.FocusMode())
+	}
+
+	initialOffset := model.ViewportYOffset()
+
+	// Navigate down step by step to reach the bottom button (5 focusables = 4 steps)
+	for i := 0; i < 4; i++ {
+		updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	model = updated.(ui.Model)
+
+	// Since the form is taller than the viewport, navigating to the bottom element MUST scroll the viewport down
+	if model.ViewportYOffset() <= initialOffset {
+		t.Errorf("expected ViewportYOffset to increase when navigating down to bottom element: got %d, initial %d",
+			model.ViewportYOffset(), initialOffset)
+	}
+
+	bottomOffset := model.ViewportYOffset()
+
+	// Now navigate back up to the top element (4 steps backwards)
+	for i := 0; i < 4; i++ {
+		updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	}
+	model = updated.(ui.Model)
+
+	// Navigating back up to the top element MUST scroll the viewport back up
+	if model.ViewportYOffset() >= bottomOffset {
+		t.Errorf("expected ViewportYOffset to decrease when navigating back up: got %d, bottom was %d",
+			model.ViewportYOffset(), bottomOffset)
+	}
+}
+
+func TestModelEnsureFocusedSurfaceVisibleOnFocusChange(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 14})
+
+	// Add Surface 1 (at the top)
+	surface1 := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "surf1",
+    "components": [
+      { "component": "Card", "id": "root", "child": "b1" },
+      { "component": "Button", "id": "b1", "action": { "event": { "name": "act1" } }, "child": "t1" },
+      { "component": "Text", "id": "t1", "text": "Surface 1 Top Button" }
+    ]
+  }
+}
+</a2ui-json>`
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surface1))
+
+	// Add long messages in between to push Surface 1 far above the viewport
+	for i := 1; i <= 15; i++ {
+		updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(fmt.Sprintf("Middle message #%d\nLine A\nLine B", i)))
+	}
+
+	// Add Surface 2 (at the bottom)
+	surface2 := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "surf2",
+    "components": [
+      { "component": "Card", "id": "root", "child": "b2" },
+      { "component": "Button", "id": "b2", "action": { "event": { "name": "act2" } }, "child": "t2" },
+      { "component": "Text", "id": "t2", "text": "Surface 2 Bottom Button" }
+    ]
+  }
+}
+</a2ui-json>`
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surface2))
+
+	// User enters Surface 2 at the bottom
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	model := updated.(ui.Model)
+	if model.FocusedSurfaceIndex() != 17 { // Surface 2 is at index 17
+		t.Logf("focused surface index: %d", model.FocusedSurfaceIndex())
+	}
+	bottomYOffset := model.ViewportYOffset()
+	if bottomYOffset == 0 {
+		t.Fatalf("expected bottomYOffset > 0 with many messages, got %d", bottomYOffset)
+	}
+
+	// User switches focus to Surface 1 (earlier in history)
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl})
+	model = updated.(ui.Model)
+
+	// If focus switched to Surface 1 (or cycled), ensure the viewport scrolled to make it visible
+	if model.FocusMode() == ui.FocusSurface && model.FocusedSurfaceIndex() == 0 {
+		if model.ViewportYOffset() >= bottomYOffset {
+			t.Errorf("expected viewport to scroll up when Surface 1 is focused: got %d, bottom was %d",
+				model.ViewportYOffset(), bottomYOffset)
+		}
+	}
+
+	// Escape returns focus to input and viewport to bottom
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	model = updated.(ui.Model)
+	if model.FocusMode() != ui.FocusInput {
+		t.Errorf("expected FocusInput on Esc, got %v", model.FocusMode())
+	}
+	if !model.ViewportAtBottom() {
+		t.Errorf("expected viewport at bottom when returning to input")
+	}
+}
+
+

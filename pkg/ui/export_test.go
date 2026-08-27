@@ -33,3 +33,19 @@ func (m Model) ViewportAtBottom() bool {
 func (m Model) ViewportAtTop() bool {
 	return m.viewport.AtTop()
 }
+
+// FocusedSurfaceIndex returns the index of the focused surface or -1.
+func (m Model) FocusedSurfaceIndex() int {
+	return m.focusedSurfaceIndex
+}
+
+// FocusMode returns the current focus mode.
+func (m Model) FocusMode() FocusMode {
+	return m.focusMode
+}
+
+// EnsureLineRangeVisibleForTest runs ensureLineRangeVisible for testing.
+func (m *Model) EnsureLineRangeVisibleForTest(startLine, endLine int) {
+	m.ensureLineRangeVisible(startLine, endLine)
+}
+

@@ -148,22 +148,26 @@ func (m *Model) renderFooter() string {
 
 func (m *Model) updateViewportContent() {
 	var sb strings.Builder
+	currentLine := 0
+	targetStart := -1
+	targetEnd := -1
+	targetElemStart := -1
+	targetElemEnd := -1
 
 	for i, item := range m.items {
+		var itemStr string
 		switch item.Kind {
 		case KindUser:
 			role := m.styles.UserRole.Render(fmt.Sprintf("👤 You (%s)", item.Timestamp.Format("15:04")))
 			text := m.styles.UserText.Render(item.Content)
 			msg := fmt.Sprintf("%s\n%s", role, text)
-			sb.WriteString(m.styles.UserMessageBox.Width(m.width - 4).Render(msg))
-			sb.WriteString("\n")
+			itemStr = m.styles.UserMessageBox.Width(m.width - 4).Render(msg) + "\n"
 
 		case KindAgentText:
 			role := m.styles.AgentRole.Render(fmt.Sprintf("🤖 Agent (%s)", item.Timestamp.Format("15:04")))
 			text := m.styles.AgentText.Render(item.Content)
 			msg := fmt.Sprintf("%s\n%s", role, text)
-			sb.WriteString(m.styles.AgentMessageBox.Width(m.width - 4).Render(msg))
-			sb.WriteString("\n")
+			itemStr = m.styles.AgentMessageBox.Width(m.width - 4).Render(msg) + "\n"
 
 		case KindAgentSurface:
 			isFocused := (m.focusMode == FocusSurface && m.focusedSurfaceIndex == i)
@@ -177,24 +181,45 @@ func (m *Model) updateViewportContent() {
 			surfaceContent := item.Surface.View().Content
 			combined := fmt.Sprintf("%s\n\n%s", badge, surfaceContent)
 
+			var containerText string
 			if isFocused {
-				sb.WriteString(m.styles.SurfaceFocusedContainer.Width(m.width - 4).Render(combined))
+				containerText = m.styles.SurfaceFocusedContainer.Width(m.width - 4).Render(combined)
 			} else {
-				sb.WriteString(m.styles.SurfaceContainer.Width(m.width - 4).Render(combined))
+				containerText = m.styles.SurfaceContainer.Width(m.width - 4).Render(combined)
 			}
-			sb.WriteString("\n")
+			itemStr = containerText + "\n"
+
+			if isFocused {
+				boxLines := strings.Split(containerText, "\n")
+				targetStart = currentLine
+				targetEnd = currentLine + len(boxLines) - 1
+
+				for lineIdx, line := range boxLines {
+					if strings.Contains(line, "ACTIVE FOCUS") {
+						continue
+					}
+					if strings.Contains(line, "▎") ||
+						strings.Contains(line, "48;2;56;189;248") ||
+						strings.Contains(line, "\x1b[7m") ||
+						strings.Contains(line, "[7m") ||
+						strings.Contains(line, ";7m") {
+						absLine := currentLine + lineIdx
+						if targetElemStart == -1 {
+							targetElemStart = absLine
+						}
+						targetElemEnd = absLine
+					}
+				}
+			}
 
 		case KindSystem:
-			sb.WriteString(m.styles.SystemMessage.Render("ℹ️ " + item.Content))
-			sb.WriteString("\n\n")
+			itemStr = m.styles.SystemMessage.Render("ℹ️ " + item.Content) + "\n\n"
 
 		case KindAction:
-			sb.WriteString(m.styles.ActionMessage.Render(item.Content))
-			sb.WriteString("\n")
+			itemStr = m.styles.ActionMessage.Render(item.Content) + "\n"
 
 		case KindError:
-			sb.WriteString(m.styles.ErrorMessage.Render("❌ " + item.Content))
-			sb.WriteString("\n")
+			itemStr = m.styles.ErrorMessage.Render("❌ " + item.Content) + "\n"
 
 		case KindDiagnostic:
 			if item.Diagnostic != nil {
@@ -221,11 +246,77 @@ func (m *Model) updateViewportContent() {
 					}
 				}
 				content := strings.Join(diagLines, "\n")
-				sb.WriteString(m.styles.DiagnosticBox.Width(m.width - 4).Render(content))
-				sb.WriteString("\n")
+				itemStr = m.styles.DiagnosticBox.Width(m.width - 4).Render(content) + "\n"
 			}
 		}
+
+		sb.WriteString(itemStr)
+		currentLine += strings.Count(itemStr, "\n")
 	}
 
 	m.viewport.SetContent(sb.String())
+
+	if m.focusMode == FocusSurface {
+		if targetElemStart != -1 {
+			m.ensureLineRangeVisible(targetElemStart, targetElemEnd)
+		} else if targetStart != -1 {
+			m.ensureLineRangeVisible(targetStart, targetEnd)
+		}
+	}
 }
+
+// ensureLineRangeVisible ensures the given vertical line range [startLine, endLine]
+// within viewport content is visible on screen, scrolling the viewport only when necessary.
+func (m *Model) ensureLineRangeVisible(startLine, endLine int) {
+	if !m.ready || m.viewport.Height() <= 0 {
+		return
+	}
+
+	vpHeight := m.viewport.Height()
+	currOffset := m.viewport.YOffset()
+	totalLines := m.viewport.TotalLineCount()
+	maxOffset := totalLines - vpHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+
+	// 1. If startLine is above current view, scroll UP so startLine is visible
+	if startLine < currOffset {
+		newOffset := startLine
+		if newOffset > 0 {
+			newOffset-- // 1 line of context margin above
+		}
+		if newOffset > maxOffset {
+			newOffset = maxOffset
+		}
+		if newOffset < 0 {
+			newOffset = 0
+		}
+		m.viewport.SetYOffset(newOffset)
+		return
+	}
+
+	// 2. If endLine is below current view, scroll DOWN so endLine is visible
+	if endLine >= currOffset+vpHeight {
+		elemHeight := endLine - startLine + 1
+		var newOffset int
+		if elemHeight <= vpHeight {
+			// If element fits on screen, position it near bottom with 1 line margin below
+			newOffset = endLine - vpHeight + 2
+		} else {
+			// If element is taller than viewport, align top of element to top of viewport
+			newOffset = startLine
+		}
+		if newOffset > maxOffset {
+			newOffset = maxOffset
+		}
+		if newOffset < 0 {
+			newOffset = 0
+		}
+		m.viewport.SetYOffset(newOffset)
+		return
+	}
+
+	// 3. Otherwise, already visible on screen!
+}
+

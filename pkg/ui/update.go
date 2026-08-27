@@ -421,7 +421,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 		surf := m.items[m.focusedSurfaceIndex].Surface
 		if surf != nil {
-			updated, cmd := surf.Update(msg)
+			updated, cmd := m.updateSurfaceWithArrowNav(surf, msg)
 			if rm, ok := updated.(render.Model); ok {
 				m.items[m.focusedSurfaceIndex].Surface = rm
 			}
@@ -433,6 +433,31 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// When Chat Input has focus
 	if m.focusMode == FocusInput {
 		switch keyStr {
+		case "up", "ctrl+up":
+			// When chat input is empty or ctrl+up is pressed, enter the most recent active A2UI surface
+			if m.input.Value() == "" || keyStr == "ctrl+up" {
+				surfaces := m.FindSurfaceIndices()
+				if len(surfaces) > 0 {
+					cmd := m.FocusNextSurface()
+					m.updateViewportContent()
+					return m, cmd
+				}
+				m.viewport.ScrollUp(2)
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+
+		case "down":
+			if m.input.Value() == "" {
+				m.viewport.ScrollDown(2)
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+
 		case "enter":
 			val := strings.TrimSpace(m.input.Value())
 			if val == "" {
@@ -488,24 +513,6 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "end":
 			if m.input.Value() == "" {
 				m.viewport.GotoBottom()
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return m, cmd
-
-		case "up":
-			if m.input.Value() == "" {
-				m.viewport.ScrollUp(2)
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return m, cmd
-
-		case "down":
-			if m.input.Value() == "" {
-				m.viewport.ScrollDown(2)
 				return m, nil
 			}
 			var cmd tea.Cmd
@@ -709,3 +716,46 @@ func (m *Model) updateFeedItemContent(id string, content string) {
 		}
 	}
 }
+
+// updateSurfaceWithArrowNav updates the focused A2UI surface with arrow key navigation support.
+// If the surface or its active control (e.g. ChoicePicker cursor, Slider adjustment, Tab switch)
+// does not consume the arrow key, it advances or retreats focus between components.
+func (m Model) updateSurfaceWithArrowNav(surf render.Model, msg tea.KeyPressMsg) (render.Model, tea.Cmd) {
+	keyStr := msg.String()
+	beforeView := surf.View().Content
+	updated, cmd := surf.Update(msg)
+	resSurf := surf
+	if rm, ok := updated.(render.Model); ok {
+		resSurf = rm
+	}
+	afterView := resSurf.View().Content
+
+	if beforeView == afterView {
+		switch keyStr {
+		case "down", "right":
+			// Forward Tab to navigate to next control in surface
+			tabMsg := tea.KeyPressMsg{Code: tea.KeyTab}
+			u2, c2 := resSurf.Update(tabMsg)
+			if rm, ok := u2.(render.Model); ok {
+				resSurf = rm
+			}
+			if c2 != nil {
+				cmd = tea.Batch(cmd, c2)
+			}
+		case "up", "left":
+			// Forward Shift+Tab to navigate to previous control in surface
+			shiftTabMsg := tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+			u2, c2 := resSurf.Update(shiftTabMsg)
+			if rm, ok := u2.(render.Model); ok {
+				resSurf = rm
+			}
+			if c2 != nil {
+				cmd = tea.Batch(cmd, c2)
+			}
+		}
+	}
+
+	return resSurf, cmd
+}
+
+
