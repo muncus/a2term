@@ -108,68 +108,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// A2UI Interaction Events emitted by a2tea
 	case event.ButtonClicked:
 		actionName, srcID, summary := a2ui.ActionSummary(msg)
-		m.items = append(m.items, NewActionItem(uuid.NewString(), summary))
-		m.toast = fmt.Sprintf("🔘 %s", summary)
-		m.updateViewportContent()
-		m.viewport.GotoBottom()
-
-		// Send action event to agent
-		if m.client != nil {
-			m.isLoading = true
-			m.status = "Sending action..."
-			cmds = append(cmds, m.sendActionCmd(actionName, srcID, nil))
-			cmds = append(cmds, m.spinner.Tick)
-			cmds = append(cmds, m.clearToastAfter(3*time.Second))
-		} else {
-			m.items = append(m.items, NewErrorItem(uuid.NewString(), "Cannot send action: No A2A agent connected. Use /agent <url> or /card <url> to connect."))
-			m.updateViewportContent()
-			m.viewport.GotoBottom()
-		}
-		return m, tea.Batch(cmds...)
+		return m.handleUIAction(fmt.Sprintf("🔘 %s", summary), m.sendActionCmd(actionName, srcID, nil))
 
 	case tmca2ui.ClientMessage:
 		if msg.Action != nil {
 			actionName := msg.Action.Name
 			srcID := msg.Action.SourceComponentID
 			ctxValues := msg.Action.Context
-			summary := fmt.Sprintf("Action: %s (source: %s, values: %v)", actionName, srcID, ctxValues)
-			m.items = append(m.items, NewActionItem(uuid.NewString(), summary))
-			m.toast = fmt.Sprintf("⚡ %s", summary)
-			m.updateViewportContent()
-			m.viewport.GotoBottom()
-
-			if m.client != nil {
-				m.isLoading = true
-				m.status = "Sending action..."
-				cmds = append(cmds, m.sendActionCmd(actionName, srcID, ctxValues))
-				cmds = append(cmds, m.spinner.Tick)
-				cmds = append(cmds, m.clearToastAfter(3*time.Second))
-			} else {
-				m.items = append(m.items, NewErrorItem(uuid.NewString(), "Cannot send action: No A2A agent connected. Use /agent <url> or /card <url> to connect."))
-				m.updateViewportContent()
-				m.viewport.GotoBottom()
-			}
-			return m, tea.Batch(cmds...)
+			summary := fmt.Sprintf("⚡ Action: %s (source: %s, values: %v)", actionName, srcID, ctxValues)
+			return m.handleUIAction(summary, m.sendActionCmd(actionName, srcID, ctxValues))
 		}
 		return m, nil
 
 	case event.InputSubmitted:
 		summary := fmt.Sprintf("Submitted text for %s: %q", msg.Source.ComponentID, msg.Value)
-		m.items = append(m.items, NewActionItem(uuid.NewString(), summary))
-		m.toast = summary
-		m.updateViewportContent()
-		m.viewport.GotoBottom()
-		cmds = append(cmds, m.clearToastAfter(3*time.Second))
-		return m, tea.Batch(cmds...)
+		return m.handleUIAction(summary, nil)
 
 	case event.ChoiceSelected:
 		summary := fmt.Sprintf("Choice selected for %s: %v", msg.Source.ComponentID, msg.Values)
-		m.items = append(m.items, NewActionItem(uuid.NewString(), summary))
-		m.toast = summary
-		m.updateViewportContent()
-		m.viewport.GotoBottom()
-		cmds = append(cmds, m.clearToastAfter(3*time.Second))
-		return m, tea.Batch(cmds...)
+		return m.handleUIAction(summary, nil)
 
 	// Mouse events for click-to-focus and scrolling
 	case tea.MouseClickMsg:
@@ -186,24 +143,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isStreaming = false
 		m.status = "Connected"
 
-		trimmed := strings.TrimSpace(msg.text)
-		if trimmed != "" {
-			segments, err := a2ui.ParseAgentResponse(msg.text, render.WithStyles(a2ui.DefaultTerminalStyles()))
-			if err != nil || len(segments) == 0 {
-				m.items = append(m.items, NewAgentTextItem(uuid.NewString(), msg.text))
-			} else {
-				for _, seg := range segments {
-					if seg.Type == a2ui.TypeSurface && seg.Surface != nil {
-						if m.ready {
-							seg.Surface.SetSize(surfaceInnerWidth(m.width), m.viewport.Height())
-						}
-						m.items = append(m.items, NewAgentSurfaceItem(uuid.NewString(), "surface", seg.Surface, seg.Messages))
-					} else if seg.Text != "" {
-						m.items = append(m.items, NewAgentTextItem(uuid.NewString(), seg.Text))
-					}
-				}
-			}
-		}
+		m.appendAgentResponseContent(msg.text)
 
 		wasAtBottom := m.viewport.AtBottom()
 		m.updateViewportContent()
@@ -227,25 +167,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.streamItemID = ""
 			}
 
-			trimmed := strings.TrimSpace(msg.chunk)
-			if trimmed != "" {
-				// Parse final full text for surfaces
-				segments, err := a2ui.ParseAgentResponse(msg.chunk, render.WithStyles(a2ui.DefaultTerminalStyles()))
-				if err != nil || len(segments) == 0 {
-					m.items = append(m.items, NewAgentTextItem(uuid.NewString(), msg.chunk))
-				} else {
-					for _, seg := range segments {
-						if seg.Type == a2ui.TypeSurface && seg.Surface != nil {
-							if m.ready {
-								seg.Surface.SetSize(surfaceInnerWidth(m.width), m.viewport.Height())
-							}
-							m.items = append(m.items, NewAgentSurfaceItem(uuid.NewString(), "surface", seg.Surface, seg.Messages))
-						} else if seg.Text != "" {
-							m.items = append(m.items, NewAgentTextItem(uuid.NewString(), seg.Text))
-						}
-					}
-				}
-			}
+			m.appendAgentResponseContent(msg.chunk)
 		} else {
 			// Update ongoing streaming text item
 			if m.streamItemID == "" {
@@ -711,6 +633,53 @@ func (m *Model) reconnectCmd(opts a2a.ClientOptions, targetURL string) tea.Cmd {
 	}
 }
 
+func (m *Model) handleUIAction(summary string, sendCmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.items = append(m.items, NewActionItem(uuid.NewString(), summary))
+	m.toast = summary
+	m.updateViewportContent()
+	m.viewport.GotoBottom()
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, m.clearToastAfter(3*time.Second))
+
+	if sendCmd != nil {
+		if m.client != nil {
+			m.isLoading = true
+			m.status = "Sending action..."
+			cmds = append(cmds, sendCmd, m.spinner.Tick)
+		} else {
+			m.items = append(m.items, NewErrorItem(uuid.NewString(), "Cannot send action: No A2A agent connected. Use /agent <url> or /card <url> to connect."))
+			m.updateViewportContent()
+			m.viewport.GotoBottom()
+		}
+	}
+	return *m, tea.Batch(cmds...)
+}
+
+func (m *Model) appendAgentResponseContent(content string) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return
+	}
+
+	segments, err := a2ui.ParseAgentResponse(content, render.WithStyles(a2ui.DefaultTerminalStyles()))
+	if err != nil || len(segments) == 0 {
+		m.items = append(m.items, NewAgentTextItem(uuid.NewString(), content))
+		return
+	}
+
+	for _, seg := range segments {
+		if seg.Type == a2ui.TypeSurface && seg.Surface != nil {
+			if m.ready {
+				seg.Surface.SetSize(surfaceInnerWidth(m.width), m.viewport.Height())
+			}
+			m.items = append(m.items, NewAgentSurfaceItem(uuid.NewString(), "surface", seg.Surface, seg.Messages))
+		} else if seg.Text != "" {
+			m.items = append(m.items, NewAgentTextItem(uuid.NewString(), seg.Text))
+		}
+	}
+}
+
 func (m *Model) clearToastAfter(d time.Duration) tea.Cmd {
 	return func() tea.Msg {
 		time.Sleep(d)
@@ -796,22 +765,10 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 			contentLine := m.viewport.YOffset() + vpRow
 			itemIdx := m.findItemAtContentLine(contentLine)
 
-			if itemIdx >= 0 && itemIdx < len(m.items) {
-				if m.items[itemIdx].Kind == KindAgentSurface && m.items[itemIdx].Surface != nil {
-					var cmds []tea.Cmd
-					// Blur previous focused surface if different
-					if m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) && m.focusedSurfaceIndex != itemIdx && m.items[m.focusedSurfaceIndex].Surface != nil {
-						m.items[m.focusedSurfaceIndex].Surface.Blur()
-					}
-					m.input.Blur()
-					m.focusMode = FocusSurface
-					m.focusedSurfaceIndex = itemIdx
-					if cmd := m.items[itemIdx].Surface.Focus(); cmd != nil {
-						cmds = append(cmds, cmd)
-					}
-					m.updateViewportContent()
-					return m, tea.Batch(cmds...)
-				}
+			if itemIdx >= 0 && itemIdx < len(m.items) && m.items[itemIdx].Kind == KindAgentSurface && m.items[itemIdx].Surface != nil {
+				cmd := m.setFocusedSurface(itemIdx)
+				m.updateViewportContent()
+				return m, cmd
 			}
 		}
 	}
@@ -821,6 +778,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
 }
+
 
 
 

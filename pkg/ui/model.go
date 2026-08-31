@@ -169,86 +169,74 @@ func (m *Model) FindSurfaceIndices() []int {
 	return indices
 }
 
+// setFocusedSurface sets focus to the surface at the given index in items,
+// or returns focus to chat input if index is -1.
+func (m *Model) setFocusedSurface(index int) tea.Cmd {
+	if index < 0 || index >= len(m.items) || m.items[index].Kind != KindAgentSurface || m.items[index].Surface == nil {
+		return m.ReturnFocusToInput()
+	}
+
+	var cmds []tea.Cmd
+	// Blur previously focused surface if different
+	if m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) && m.focusedSurfaceIndex != index && m.items[m.focusedSurfaceIndex].Surface != nil {
+		m.items[m.focusedSurfaceIndex].Surface.Blur()
+	}
+
+	m.input.Blur()
+	m.focusMode = FocusSurface
+	m.focusedSurfaceIndex = index
+	if cmd := m.items[index].Surface.Focus(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
+}
+
 // FocusNextSurface moves focus to the next available A2UI surface, or wraps to input.
 func (m *Model) FocusNextSurface() tea.Cmd {
 	surfaces := m.FindSurfaceIndices()
 	if len(surfaces) == 0 {
-		m.focusMode = FocusInput
-		m.focusedSurfaceIndex = -1
-		return m.input.Focus()
+		return m.ReturnFocusToInput()
 	}
 
 	if m.focusMode == FocusInput {
 		// Switch to the most recent surface
-		m.input.Blur()
-		m.focusMode = FocusSurface
-		m.focusedSurfaceIndex = surfaces[len(surfaces)-1]
-		return m.items[m.focusedSurfaceIndex].Surface.Focus()
+		return m.setFocusedSurface(surfaces[len(surfaces)-1])
 	}
 
-	// Currently on a surface: find next surface or cycle
-	currentPos := -1
+	// Currently on a surface: find next surface or cycle back to input
 	for pos, idx := range surfaces {
 		if idx == m.focusedSurfaceIndex {
-			currentPos = pos
+			if pos+1 < len(surfaces) {
+				return m.setFocusedSurface(surfaces[pos+1])
+			}
 			break
 		}
 	}
 
-	if currentPos >= 0 && currentPos < len(surfaces)-1 {
-		// Next surface
-		m.items[m.focusedSurfaceIndex].Surface.Blur()
-		m.focusedSurfaceIndex = surfaces[currentPos+1]
-		return m.items[m.focusedSurfaceIndex].Surface.Focus()
-	}
-
-	// Return to input
-	if m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) && m.items[m.focusedSurfaceIndex].Surface != nil {
-		m.items[m.focusedSurfaceIndex].Surface.Blur()
-	}
-	m.focusMode = FocusInput
-	m.focusedSurfaceIndex = -1
-	return m.input.Focus()
+	return m.ReturnFocusToInput()
 }
 
 // FocusPreviousSurface moves focus to the previous A2UI surface or back to input.
 func (m *Model) FocusPreviousSurface() tea.Cmd {
 	surfaces := m.FindSurfaceIndices()
 	if len(surfaces) == 0 {
-		m.focusMode = FocusInput
-		m.focusedSurfaceIndex = -1
-		return m.input.Focus()
+		return m.ReturnFocusToInput()
 	}
 
 	if m.focusMode == FocusInput {
-		m.input.Blur()
-		m.focusMode = FocusSurface
-		m.focusedSurfaceIndex = surfaces[0]
-		return m.items[m.focusedSurfaceIndex].Surface.Focus()
+		return m.setFocusedSurface(surfaces[0])
 	}
 
-	currentPos := -1
 	for pos, idx := range surfaces {
 		if idx == m.focusedSurfaceIndex {
-			currentPos = pos
+			if pos > 0 {
+				return m.setFocusedSurface(surfaces[pos-1])
+			}
 			break
 		}
 	}
 
-	if currentPos > 0 {
-		m.items[m.focusedSurfaceIndex].Surface.Blur()
-		m.focusedSurfaceIndex = surfaces[currentPos-1]
-		return m.items[m.focusedSurfaceIndex].Surface.Focus()
-	}
-
-	// Return to input
-	if m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) && m.items[m.focusedSurfaceIndex].Surface != nil {
-		m.items[m.focusedSurfaceIndex].Surface.Blur()
-	}
-	m.focusMode = FocusInput
-	m.focusedSurfaceIndex = -1
-	m.viewport.GotoBottom()
-	return m.input.Focus()
+	return m.ReturnFocusToInput()
 }
 
 // ReturnFocusToInput returns keyboard focus back to the text input box.

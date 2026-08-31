@@ -416,8 +416,21 @@ func ExtractArtifactText(art *a2a.Artifact) string {
 	if art == nil {
 		return ""
 	}
+	return extractPartsText(art.Parts)
+}
+
+// ExtractText retrieves all text content from an A2A Message.
+func ExtractText(msg *a2a.Message) string {
+	if msg == nil {
+		return ""
+	}
+	return extractPartsText(msg.Parts)
+}
+
+// extractPartsText iterates through a slice of A2A Parts and concatenates all text/raw/url/data representations.
+func extractPartsText(parts a2a.ContentParts) string {
 	var sb strings.Builder
-	for _, part := range art.Parts {
+	for _, part := range parts {
 		if part == nil {
 			continue
 		}
@@ -449,40 +462,3 @@ func ExtractArtifactText(art *a2a.Artifact) string {
 	return sb.String()
 }
 
-// ExtractText retrieves all text content from an A2A Message.
-func ExtractText(msg *a2a.Message) string {
-	if msg == nil {
-		return ""
-	}
-	var sb strings.Builder
-	for _, part := range msg.Parts {
-		if part == nil {
-			continue
-		}
-		if t := part.Text(); t != "" {
-			sb.WriteString(t)
-		} else if r := part.Raw(); len(r) > 0 {
-			sb.WriteString(string(r))
-		} else if u := part.URL(); u != "" {
-			sb.WriteString(string(u))
-		} else if d := part.Data(); d != nil {
-			switch v := d.(type) {
-			case string:
-				sb.WriteString(v)
-			case map[string]any:
-				if raw, ok := v["raw"].(string); ok {
-					sb.WriteString(raw)
-				} else if text, ok := v["text"].(string); ok {
-					sb.WriteString(text)
-				} else if jsonStr, err := json.Marshal(v); err == nil {
-					sb.WriteString(string(jsonStr))
-				}
-			default:
-				if jsonStr, err := json.Marshal(v); err == nil {
-					sb.WriteString(string(jsonStr))
-				}
-			}
-		}
-	}
-	return sb.String()
-}

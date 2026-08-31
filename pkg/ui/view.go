@@ -169,98 +169,28 @@ func (m *Model) updateViewportContent() {
 	targetElemEnd := -1
 
 	for i, item := range m.items {
-		var itemStr string
-		switch item.Kind {
-		case KindUser:
-			role := m.styles.UserRole.Render(fmt.Sprintf("👤 You (%s)", item.Timestamp.Format("15:04")))
-			text := m.styles.UserText.Render(item.Content)
-			msg := fmt.Sprintf("%s\n%s", role, text)
-			itemStr = m.styles.UserMessageBox.Width(m.width - 4).Render(msg) + "\n"
+		itemStr := m.renderFeedItem(i, item)
 
-		case KindAgentText:
-			role := m.styles.AgentRole.Render(fmt.Sprintf("🤖 Agent (%s)", item.Timestamp.Format("15:04")))
-			text := m.styles.AgentText.Render(item.Content)
-			msg := fmt.Sprintf("%s\n%s", role, text)
-			itemStr = m.styles.AgentMessageBox.Width(m.width - 4).Render(msg) + "\n"
+		if item.Kind == KindAgentSurface && m.focusMode == FocusSurface && m.focusedSurfaceIndex == i {
+			boxLines := strings.Split(strings.TrimSuffix(itemStr, "\n"), "\n")
+			targetStart = currentLine
+			targetEnd = currentLine + len(boxLines) - 1
 
-		case KindAgentSurface:
-			isFocused := (m.focusMode == FocusSurface && m.focusedSurfaceIndex == i)
-			var badge string
-			if isFocused {
-				badge = m.styles.SurfaceFocusedBadge.Render("🎮 A2UI SURFACE [ACTIVE FOCUS - Tab moves focus, Enter activates]")
-			} else {
-				badge = m.styles.SurfaceBadge.Render("📦 A2UI SURFACE [Press Tab to interact]")
-			}
-
-			surfaceContent := item.Surface.View().Content
-			combined := fmt.Sprintf("%s\n\n%s", badge, surfaceContent)
-
-			var containerText string
-			if isFocused {
-				containerText = m.styles.SurfaceFocusedContainer.Width(m.width - 4).Render(combined)
-			} else {
-				containerText = m.styles.SurfaceContainer.Width(m.width - 4).Render(combined)
-			}
-			itemStr = containerText + "\n"
-
-			if isFocused {
-				boxLines := strings.Split(containerText, "\n")
-				targetStart = currentLine
-				targetEnd = currentLine + len(boxLines) - 1
-
-				for lineIdx, line := range boxLines {
-					if strings.Contains(line, "ACTIVE FOCUS") {
-						continue
+			for lineIdx, line := range boxLines {
+				if strings.Contains(line, "ACTIVE FOCUS") {
+					continue
+				}
+				if strings.Contains(line, "▎") ||
+					strings.Contains(line, "48;2;56;189;248") ||
+					strings.Contains(line, "\x1b[7m") ||
+					strings.Contains(line, "[7m") ||
+					strings.Contains(line, ";7m") {
+					absLine := currentLine + lineIdx
+					if targetElemStart == -1 {
+						targetElemStart = absLine
 					}
-					if strings.Contains(line, "▎") ||
-						strings.Contains(line, "48;2;56;189;248") ||
-						strings.Contains(line, "\x1b[7m") ||
-						strings.Contains(line, "[7m") ||
-						strings.Contains(line, ";7m") {
-						absLine := currentLine + lineIdx
-						if targetElemStart == -1 {
-							targetElemStart = absLine
-						}
-						targetElemEnd = absLine
-					}
+					targetElemEnd = absLine
 				}
-			}
-
-		case KindSystem:
-			itemStr = m.styles.SystemMessage.Render("ℹ️ " + item.Content) + "\n\n"
-
-		case KindAction:
-			itemStr = m.styles.ActionMessage.Render(item.Content) + "\n"
-
-		case KindError:
-			itemStr = m.styles.ErrorMessage.Render("❌ " + item.Content) + "\n"
-
-		case KindDiagnostic:
-			if item.Diagnostic != nil {
-				d := item.Diagnostic
-				var diagLines []string
-				diagLines = append(diagLines, m.styles.DiagnosticTitle.Render(fmt.Sprintf("⚠️ DIAGNOSTIC: %s", d.Title)))
-				if d.TargetURL != "" {
-					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Target URL:"), m.styles.DiagnosticValue.Render(d.TargetURL)))
-				}
-				if d.Phase != "" {
-					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Phase:"), m.styles.DiagnosticValue.Render(d.Phase)))
-				}
-				if d.ErrorMsg != "" {
-					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Error:"), m.styles.DiagnosticValue.Render(d.ErrorMsg)))
-				}
-				if d.Details != "" {
-					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Details:"), m.styles.DiagnosticValue.Render(d.Details)))
-				}
-				if len(d.Tips) > 0 {
-					diagLines = append(diagLines, "")
-					diagLines = append(diagLines, m.styles.DiagnosticLabel.Render("Troubleshooting Tips:"))
-					for _, tip := range d.Tips {
-						diagLines = append(diagLines, m.styles.DiagnosticTip.Render("  • "+tip))
-					}
-				}
-				content := strings.Join(diagLines, "\n")
-				itemStr = m.styles.DiagnosticBox.Width(m.width - 4).Render(content) + "\n"
 			}
 		}
 
@@ -276,6 +206,87 @@ func (m *Model) updateViewportContent() {
 		} else if targetStart != -1 {
 			m.ensureLineRangeVisible(targetStart, targetEnd)
 		}
+	}
+}
+
+// renderFeedItem formats and styles a single FeedItem according to its Kind and focus state.
+func (m *Model) renderFeedItem(idx int, item FeedItem) string {
+	switch item.Kind {
+	case KindUser:
+		role := m.styles.UserRole.Render(fmt.Sprintf("👤 You (%s)", item.Timestamp.Format("15:04")))
+		text := m.styles.UserText.Render(item.Content)
+		msg := fmt.Sprintf("%s\n%s", role, text)
+		return m.styles.UserMessageBox.Width(m.width - 4).Render(msg) + "\n"
+
+	case KindAgentText:
+		role := m.styles.AgentRole.Render(fmt.Sprintf("🤖 Agent (%s)", item.Timestamp.Format("15:04")))
+		text := m.styles.AgentText.Render(item.Content)
+		msg := fmt.Sprintf("%s\n%s", role, text)
+		return m.styles.AgentMessageBox.Width(m.width - 4).Render(msg) + "\n"
+
+	case KindAgentSurface:
+		isFocused := (m.focusMode == FocusSurface && m.focusedSurfaceIndex == idx)
+		var badge string
+		if isFocused {
+			badge = m.styles.SurfaceFocusedBadge.Render("🎮 A2UI SURFACE [ACTIVE FOCUS - Tab moves focus, Enter activates]")
+		} else {
+			badge = m.styles.SurfaceBadge.Render("📦 A2UI SURFACE [Press Tab to interact]")
+		}
+
+		surfaceContent := ""
+		if item.Surface != nil {
+			surfaceContent = item.Surface.View().Content
+		}
+		combined := fmt.Sprintf("%s\n\n%s", badge, surfaceContent)
+
+		var containerText string
+		if isFocused {
+			containerText = m.styles.SurfaceFocusedContainer.Width(m.width - 4).Render(combined)
+		} else {
+			containerText = m.styles.SurfaceContainer.Width(m.width - 4).Render(combined)
+		}
+		return containerText + "\n"
+
+	case KindSystem:
+		return m.styles.SystemMessage.Render("ℹ️ " + item.Content) + "\n\n"
+
+	case KindAction:
+		return m.styles.ActionMessage.Render(item.Content) + "\n"
+
+	case KindError:
+		return m.styles.ErrorMessage.Render("❌ " + item.Content) + "\n"
+
+	case KindDiagnostic:
+		if item.Diagnostic != nil {
+			d := item.Diagnostic
+			var diagLines []string
+			diagLines = append(diagLines, m.styles.DiagnosticTitle.Render(fmt.Sprintf("⚠️ DIAGNOSTIC: %s", d.Title)))
+			if d.TargetURL != "" {
+				diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Target URL:"), m.styles.DiagnosticValue.Render(d.TargetURL)))
+			}
+			if d.Phase != "" {
+				diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Phase:"), m.styles.DiagnosticValue.Render(d.Phase)))
+			}
+			if d.ErrorMsg != "" {
+				diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Error:"), m.styles.DiagnosticValue.Render(d.ErrorMsg)))
+			}
+			if d.Details != "" {
+				diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Details:"), m.styles.DiagnosticValue.Render(d.Details)))
+			}
+			if len(d.Tips) > 0 {
+				diagLines = append(diagLines, "")
+				diagLines = append(diagLines, m.styles.DiagnosticLabel.Render("Troubleshooting Tips:"))
+				for _, tip := range d.Tips {
+					diagLines = append(diagLines, m.styles.DiagnosticTip.Render("  • "+tip))
+				}
+			}
+			content := strings.Join(diagLines, "\n")
+			return m.styles.DiagnosticBox.Width(m.width - 4).Render(content) + "\n"
+		}
+		return ""
+
+	default:
+		return item.Content + "\n"
 	}
 }
 
@@ -343,78 +354,7 @@ func (m *Model) findItemAtContentLine(targetLine int) int {
 
 	currentLine := 0
 	for i, item := range m.items {
-		var itemStr string
-		switch item.Kind {
-		case KindUser:
-			role := m.styles.UserRole.Render(fmt.Sprintf("👤 You (%s)", item.Timestamp.Format("15:04")))
-			text := m.styles.UserText.Render(item.Content)
-			msg := fmt.Sprintf("%s\n%s", role, text)
-			itemStr = m.styles.UserMessageBox.Width(m.width - 4).Render(msg) + "\n"
-
-		case KindAgentText:
-			role := m.styles.AgentRole.Render(fmt.Sprintf("🤖 Agent (%s)", item.Timestamp.Format("15:04")))
-			text := m.styles.AgentText.Render(item.Content)
-			msg := fmt.Sprintf("%s\n%s", role, text)
-			itemStr = m.styles.AgentMessageBox.Width(m.width - 4).Render(msg) + "\n"
-
-		case KindAgentSurface:
-			isFocused := (m.focusMode == FocusSurface && m.focusedSurfaceIndex == i)
-			var badge string
-			if isFocused {
-				badge = m.styles.SurfaceFocusedBadge.Render("🎮 A2UI SURFACE [ACTIVE FOCUS - Tab moves focus, Enter activates]")
-			} else {
-				badge = m.styles.SurfaceBadge.Render("📦 A2UI SURFACE [Press Tab to interact]")
-			}
-
-			surfaceContent := item.Surface.View().Content
-			combined := fmt.Sprintf("%s\n\n%s", badge, surfaceContent)
-
-			var containerText string
-			if isFocused {
-				containerText = m.styles.SurfaceFocusedContainer.Width(m.width - 4).Render(combined)
-			} else {
-				containerText = m.styles.SurfaceContainer.Width(m.width - 4).Render(combined)
-			}
-			itemStr = containerText + "\n"
-
-		case KindSystem:
-			itemStr = m.styles.SystemMessage.Render("ℹ️ " + item.Content) + "\n\n"
-
-		case KindAction:
-			itemStr = m.styles.ActionMessage.Render(item.Content) + "\n"
-
-		case KindError:
-			itemStr = m.styles.ErrorMessage.Render("❌ " + item.Content) + "\n"
-
-		case KindDiagnostic:
-			if item.Diagnostic != nil {
-				d := item.Diagnostic
-				var diagLines []string
-				diagLines = append(diagLines, m.styles.DiagnosticTitle.Render(fmt.Sprintf("⚠️ DIAGNOSTIC: %s", d.Title)))
-				if d.TargetURL != "" {
-					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Target URL:"), m.styles.DiagnosticValue.Render(d.TargetURL)))
-				}
-				if d.Phase != "" {
-					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Phase:"), m.styles.DiagnosticValue.Render(d.Phase)))
-				}
-				if d.ErrorMsg != "" {
-					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Error:"), m.styles.DiagnosticValue.Render(d.ErrorMsg)))
-				}
-				if d.Details != "" {
-					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Details:"), m.styles.DiagnosticValue.Render(d.Details)))
-				}
-				if len(d.Tips) > 0 {
-					diagLines = append(diagLines, "")
-					diagLines = append(diagLines, m.styles.DiagnosticLabel.Render("Troubleshooting Tips:"))
-					for _, tip := range d.Tips {
-						diagLines = append(diagLines, m.styles.DiagnosticTip.Render("  • "+tip))
-					}
-				}
-				content := strings.Join(diagLines, "\n")
-				itemStr = m.styles.DiagnosticBox.Width(m.width - 4).Render(content) + "\n"
-			}
-		}
-
+		itemStr := m.renderFeedItem(i, item)
 		lineCount := strings.Count(itemStr, "\n")
 		if targetLine >= currentLine && targetLine < currentLine+lineCount {
 			return i
@@ -423,5 +363,6 @@ func (m *Model) findItemAtContentLine(targetLine int) int {
 	}
 	return -1
 }
+
 
 
