@@ -107,18 +107,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	// A2UI Interaction Events emitted by a2tea
-	case event.ButtonClicked:
-		actionName, srcID, summary := a2ui.ActionSummary(msg)
-		return m.handleUIAction(fmt.Sprintf("🔘 %s", summary), m.sendActionCmd(actionName, srcID, nil))
-
 	case tmca2ui.ClientMessage:
 		if msg.Action != nil {
 			actionName := msg.Action.Name
 			srcID := msg.Action.SourceComponentID
 			ctxValues := msg.Action.Context
-			summary := fmt.Sprintf("⚡ Action: %s (source: %s, values: %v)", actionName, srcID, ctxValues)
-			return m.handleUIAction(summary, m.sendActionCmd(actionName, srcID, ctxValues))
+			summary := fmt.Sprintf("Action: %s (source: %s, values: %v)", actionName, srcID, ctxValues)
+			return m.handleUIAction(fmt.Sprintf("⚡ %s", summary), m.sendActionCmd(actionName, srcID, ctxValues))
 		}
+		return m, nil
+
+	case event.ButtonClicked:
+		// a2tea emits a native tmca2ui.ClientMessage alongside ButtonClicked with full form context.
+		// Action dispatch is handled in tmca2ui.ClientMessage to prevent duplicate dispatch.
 		return m, nil
 
 	case event.InputSubmitted:

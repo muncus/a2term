@@ -85,19 +85,17 @@ func TestModelInteractionEvents(t *testing.T) {
 	m := ui.NewModel(ui.Config{})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 
-	// Simulate a button click event
+	// 1. Simulate button click (should be ignored for dispatch to prevent duplicate action processing)
 	btnEvent := event.ButtonClicked{
 		Source: event.Source{ComponentID: "submitBtn"},
 		Action: &tmca2ui.EventAction{Name: "submitForm"},
 	}
-	updated, _ = updated.Update(btnEvent)
-
-	view := updated.View()
-	if !strings.Contains(view.Content, "submitForm") {
-		t.Errorf("expected button action to appear in view, got %q", view.Content)
+	updated, cmd := updated.Update(btnEvent)
+	if cmd != nil {
+		t.Errorf("expected ButtonClicked to return nil cmd to prevent duplicate dispatch, got %v", cmd)
 	}
 
-	// Simulate client message
+	// 2. Simulate standard A2UI client message (canonical action event)
 	clientMsg := tmca2ui.ClientMessage{
 		Action: &tmca2ui.ActionEvent{
 			Name:              "confirmAction",
@@ -107,9 +105,20 @@ func TestModelInteractionEvents(t *testing.T) {
 	}
 	updated, _ = updated.Update(clientMsg)
 
-	view = updated.View()
+	view := updated.View()
 	if !strings.Contains(view.Content, "confirmAction") {
 		t.Errorf("expected client message action to appear in view, got %q", view.Content)
+	}
+
+	// 3. Simulate input submission
+	inputEv := event.InputSubmitted{
+		Source: event.Source{ComponentID: "txtInput"},
+		Value:  "hello a2ui",
+	}
+	updated, _ = updated.Update(inputEv)
+	view = updated.View()
+	if !strings.Contains(view.Content, "hello a2ui") {
+		t.Errorf("expected input submission to appear in view, got %q", view.Content)
 	}
 }
 
