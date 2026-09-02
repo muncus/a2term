@@ -26,7 +26,11 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
+
+	"a2term/pkg/agent"
 )
+
+var _ agent.Client = (*Client)(nil)
 
 // Client wraps an A2A client instance and manages conversation state.
 type Client struct {
@@ -151,11 +155,14 @@ func (c *Client) AgentName() string {
 	return "A2A Agent"
 }
 
-// CurrentSession returns the current ContextID and TaskID.
-func (c *Client) CurrentSession() (string, a2a.TaskID) {
+// CurrentSession returns the current ContextID and TaskID encapsulated in agent.SessionInfo.
+func (c *Client) CurrentSession() agent.SessionInfo {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.contextID, c.taskID
+	return agent.SessionInfo{
+		ContextID: c.contextID,
+		TaskID:    string(c.taskID),
+	}
 }
 
 // ResetSession resets the active TaskID and ContextID to start a fresh conversation.

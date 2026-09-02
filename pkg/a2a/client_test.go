@@ -338,12 +338,12 @@ func TestClientOmitTaskIDOnTerminalState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("msg 1 failed: %v", err)
 	}
-	ctxID1, taskID1 := client.CurrentSession()
-	if taskID1 != "task-1" {
-		t.Errorf("expected active taskID 'task-1' after working response, got %q", taskID1)
+	sess1 := client.CurrentSession()
+	if sess1.TaskID != "task-1" {
+		t.Errorf("expected active taskID 'task-1' after working response, got %q", sess1.TaskID)
 	}
-	if ctxID1 != "thread-123" {
-		t.Errorf("expected contextID 'thread-123', got %q", ctxID1)
+	if sess1.ContextID != "thread-123" {
+		t.Errorf("expected contextID 'thread-123', got %q", sess1.ContextID)
 	}
 
 	// Message 2: Continues task-1, which returns COMPLETED
@@ -351,12 +351,12 @@ func TestClientOmitTaskIDOnTerminalState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("msg 2 failed: %v", err)
 	}
-	ctxID2, taskID2 := client.CurrentSession()
-	if taskID2 != "" {
-		t.Errorf("expected empty taskID after terminal COMPLETED state, got %q", taskID2)
+	sess2 := client.CurrentSession()
+	if sess2.TaskID != "" {
+		t.Errorf("expected empty taskID after terminal COMPLETED state, got %q", sess2.TaskID)
 	}
-	if ctxID2 != "thread-123" {
-		t.Errorf("expected contextID 'thread-123' to be retained, got %q", ctxID2)
+	if sess2.ContextID != "thread-123" {
+		t.Errorf("expected contextID 'thread-123' to be retained, got %q", sess2.ContextID)
 	}
 
 	// Message 3: Next message should omit taskId so server starts fresh task

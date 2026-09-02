@@ -30,6 +30,7 @@ import (
 
 	"a2term/pkg/a2a"
 	"a2term/pkg/a2ui"
+	"a2term/pkg/agent"
 )
 
 // Internal message types for async A2A agent events
@@ -51,7 +52,7 @@ type (
 	}
 
 	reconnectSuccessMsg struct {
-		client    *a2a.Client
+		client    agent.Client
 		agentName string
 		targetURL string
 	}

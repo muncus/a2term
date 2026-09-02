@@ -24,7 +24,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"a2term/pkg/a2a"
+	"a2term/pkg/agent"
 )
 
 // FocusMode indicates which UI component currently has keyboard focus.
@@ -37,7 +37,7 @@ const (
 
 // Model represents the top-level Bubble Tea state for a2term.
 type Model struct {
-	client   *a2a.Client
+	client   agent.Client
 	agentURL string
 	cardURL  string
 	items    []FeedItem
@@ -65,7 +65,7 @@ type Model struct {
 
 // Config holds initial settings for creating a new Model.
 type Config struct {
-	Client     *a2a.Client
+	Client     agent.Client
 	AgentURL   string
 	CardURL    string
 	InitialErr error

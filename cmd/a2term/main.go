@@ -24,6 +24,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"a2term/pkg/a2a"
+	"a2term/pkg/agent"
 	"a2term/pkg/ui"
 )
 
@@ -66,7 +67,7 @@ func main() {
 		cardURL = os.Getenv("A2A_CARD_URL")
 	}
 
-	var client *a2a.Client
+	var client agent.Client
 	var initErr error
 	if agentURL != "" || cardURL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -84,11 +84,11 @@ func (m *Model) renderHeader() string {
 
 	var sessionBadge string
 	if m.client != nil {
-		ctxID, taskID := m.client.CurrentSession()
-		if taskID != "" {
-			sessionBadge = m.styles.HeaderTask.Render(fmt.Sprintf("Task: %s", taskID))
-		} else if ctxID != "" {
-			sessionBadge = m.styles.HeaderTask.Render(fmt.Sprintf("Ctx: %s", ctxID))
+		sess := m.client.CurrentSession()
+		if sess.TaskID != "" {
+			sessionBadge = m.styles.HeaderTask.Render(fmt.Sprintf("Task: %s", sess.TaskID))
+		} else if sess.ContextID != "" {
+			sessionBadge = m.styles.HeaderTask.Render(fmt.Sprintf("Ctx: %s", sess.ContextID))
 		}
 	}
 
