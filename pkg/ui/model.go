@@ -24,7 +24,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"a2term/pkg/agent"
+	"github.com/muncus/a2term/pkg/agent"
 )
 
 // FocusMode indicates which UI component currently has keyboard focus.
@@ -35,7 +35,7 @@ const (
 	FocusSurface
 )
 
-// Model represents the top-level Bubble Tea state for a2term.
+// Model represents the top-level Bubble Tea state for github.com/muncus/a2term.
 type Model struct {
 	client   agent.Client
 	agentURL string
@@ -121,7 +121,7 @@ func NewModel(cfg Config) Model {
 	}
 
 	var welcome strings.Builder
-	welcome.WriteString("✨ Welcome to a2term! Terminal client for A2A agents with A2UI.\n")
+	welcome.WriteString("✨ Welcome to github.com/muncus/a2term! Terminal client for A2A agents with A2UI.\n")
 	welcome.WriteString("Type a message to chat, or use commands like /help, /clear, /agent <url>, /card <url>.\n")
 	welcome.WriteString("When an A2UI card appears, press [Tab] to focus and interact with controls.")
 

@@ -21,7 +21,7 @@ import (
 	"github.com/joestump-agent/a2tea/event"
 	tmca2ui "github.com/tmc/a2ui"
 
-	"a2term/pkg/a2ui"
+	"github.com/muncus/a2term/pkg/a2ui"
 )
 
 const sampleAgentResponse = `Here is the requested information:

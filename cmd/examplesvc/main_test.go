@@ -24,8 +24,8 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
-	a2aclient "a2term/pkg/a2a"
-	"a2term/pkg/a2ui"
+	a2aclient "github.com/muncus/a2term/pkg/a2a"
+	"github.com/muncus/a2term/pkg/a2ui"
 )
 
 func TestCardsParseWithA2UI(t *testing.T) {

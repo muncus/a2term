@@ -25,7 +25,7 @@ import (
 	"github.com/joestump-agent/a2tea/event"
 	tmca2ui "github.com/tmc/a2ui"
 
-	"a2term/pkg/ui"
+	"github.com/muncus/a2term/pkg/ui"
 )
 
 func TestModelInit(t *testing.T) {
@@ -36,7 +36,7 @@ func TestModelInit(t *testing.T) {
 	}
 
 	view := m.View()
-	if !strings.Contains(view.Content, "Initializing a2term") {
+	if !strings.Contains(view.Content, "Initializing github.com/muncus/a2term") {
 		t.Errorf("expected view to contain initializing before window size, got %q", view.Content)
 	}
 }
@@ -46,10 +46,10 @@ func TestModelWindowSize(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	view := updated.View()
 
-	if !strings.Contains(view.Content, "a2term") {
-		t.Errorf("expected view to render title 'a2term', got %q", view.Content)
+	if !strings.Contains(view.Content, "github.com/muncus/a2term") {
+		t.Errorf("expected view to render title 'github.com/muncus/a2term', got %q", view.Content)
 	}
-	if !strings.Contains(view.Content, "Welcome to a2term") {
+	if !strings.Contains(view.Content, "Welcome to github.com/muncus/a2term") {
 		t.Errorf("expected view to render welcome message, got %q", view.Content)
 	}
 }
@@ -65,7 +65,7 @@ func TestModelSlashCommands(t *testing.T) {
 	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	view := updated.View()
-	if !strings.Contains(view.Content, "a2term Commands & Help") {
+	if !strings.Contains(view.Content, "github.com/muncus/a2term Commands & Help") {
 		t.Errorf("expected /help output in view, got %q", view.Content)
 	}
 

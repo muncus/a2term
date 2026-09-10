@@ -139,7 +139,7 @@ func NewServerHandler(card *a2a.AgentCard, reqHandler a2asrv.RequestHandler, bas
 			jsonrpcHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/" && r.Method == http.MethodGet:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			fmt.Fprintf(w, "🤖 A2UI Example Service (JSON-RPC) is running at %s\n\nConnect with a2term:\n  ./a2term --agent=%s\n", baseURL, baseURL)
+			fmt.Fprintf(w, "🤖 A2UI Example Service (JSON-RPC) is running at %s\n\nConnect with github.com/muncus/a2term:\n  ./github.com/muncus/a2term --agent=%s\n", baseURL, baseURL)
 		default:
 			http.NotFound(w, r)
 		}
@@ -156,7 +156,7 @@ func main() {
 
 	card := &a2a.AgentCard{
 		Name:        "A2UI Example Agent",
-		Description: "Interactive A2UI test agent providing controls and interactive cards for a2term",
+		Description: "Interactive A2UI test agent providing controls and interactive cards for github.com/muncus/a2term",
 		Version:     "1.0.0",
 		SupportedInterfaces: []*a2a.AgentInterface{
 			a2a.NewAgentInterface(baseURL, a2a.TransportProtocolJSONRPC),
@@ -176,7 +176,7 @@ func main() {
 		log.Printf("==================================================")
 		log.Printf("🚀 A2UI Example Service (JSON-RPC) on %s", baseURL)
 		log.Printf("   Agent Card: %s/.well-known/agent-card.json", baseURL)
-		log.Printf("   Test with:  ./a2term --agent=%s", baseURL)
+		log.Printf("   Test with:  ./github.com/muncus/a2term --agent=%s", baseURL)
 		log.Printf("==================================================")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)

@@ -28,9 +28,9 @@ import (
 	"github.com/joestump-agent/a2tea/render"
 	tmca2ui "github.com/tmc/a2ui"
 
-	"a2term/pkg/a2a"
-	"a2term/pkg/a2ui"
-	"a2term/pkg/agent"
+	"github.com/muncus/a2term/pkg/a2a"
+	"github.com/muncus/a2term/pkg/a2ui"
+	"github.com/muncus/a2term/pkg/agent"
 )
 
 // Internal message types for async A2A agent events
@@ -479,13 +479,13 @@ func (m Model) handleCommand(cmdStr string) (tea.Model, tea.Cmd) {
 	switch cmd {
 	case "/help":
 		var sb strings.Builder
-		sb.WriteString("📖 a2term Commands & Help:\n")
+		sb.WriteString("📖 github.com/muncus/a2term Commands & Help:\n")
 		sb.WriteString("  /help            - Show this help message\n")
 		sb.WriteString("  /clear           - Clear conversation history\n")
 		sb.WriteString("  /reset           - Reset active A2A session & task context\n")
 		sb.WriteString("  /agent <url>     - Connect to agent endpoint URL\n")
 		sb.WriteString("  /card <url>      - Resolve and connect using Agent Card URL\n")
-		sb.WriteString("  /quit, /exit     - Exit a2term\n\n")
+		sb.WriteString("  /quit, /exit     - Exit github.com/muncus/a2term\n\n")
 		sb.WriteString("⌨️ Keybindings:\n")
 		sb.WriteString("  [Tab]            - Focus interactive A2UI surface / cycle controls\n")
 		sb.WriteString("  [Shift+Tab]      - Return focus to chat input\n")

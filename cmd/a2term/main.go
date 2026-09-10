@@ -23,9 +23,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"a2term/pkg/a2a"
-	"a2term/pkg/agent"
-	"a2term/pkg/ui"
+	"github.com/muncus/a2term/pkg/a2a"
+	"github.com/muncus/a2term/pkg/agent"
+	"github.com/muncus/a2term/pkg/ui"
 )
 
 var (
@@ -41,8 +41,8 @@ func main() {
 	flag.BoolVar(versionFlag, "v", false, "Short for --version")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "a2term - Terminal Client for A2A Agents with A2UI Rendering\n\n")
-		fmt.Fprintf(os.Stderr, "Usage: a2term [options]\n\n")
+		fmt.Fprintf(os.Stderr, "github.com/muncus/a2term - Terminal Client for A2A Agents with A2UI Rendering\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: github.com/muncus/a2term [options]\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
@@ -53,7 +53,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("a2term v%s\n", version)
+		fmt.Printf("github.com/muncus/a2term v%s\n", version)
 		os.Exit(0)
 	}
 
@@ -94,7 +94,7 @@ func main() {
 	p := tea.NewProgram(model)
 
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running a2term: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error running github.com/muncus/a2term: %v\n", err)
 		os.Exit(1)
 	}
 }

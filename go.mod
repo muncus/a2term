@@ -1,4 +1,4 @@
-module a2term
+module github.com/muncus/a2term
 
 go 1.27.0
 

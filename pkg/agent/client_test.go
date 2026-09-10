@@ -18,7 +18,7 @@ import (
 	"context"
 	"testing"
 
-	"a2term/pkg/agent"
+	"github.com/muncus/a2term/pkg/agent"
 )
 
 // mockClient verifies interface compliance at compile-time.

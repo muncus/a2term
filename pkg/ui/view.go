@@ -25,7 +25,7 @@ import (
 // View renders the complete UI layout.
 func (m Model) View() tea.View {
 	if !m.ready {
-		v := tea.NewView("Initializing a2term...")
+		v := tea.NewView("Initializing github.com/muncus/a2term...")
 		v.AltScreen = true
 		v.MouseMode = tea.MouseModeCellMotion
 		return v
@@ -59,7 +59,7 @@ func (m Model) View() tea.View {
 }
 
 func (m *Model) renderHeader() string {
-	title := m.styles.HeaderTitle.Render("a2term")
+	title := m.styles.HeaderTitle.Render("github.com/muncus/a2term")
 
 	var statusText string
 	var statusStyled string

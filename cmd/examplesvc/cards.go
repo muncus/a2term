@@ -33,7 +33,7 @@ func wrapA2UI(surfaceID string, components []map[string]any) string {
 	return fmt.Sprintf("<a2ui-json>\n%s\n</a2ui-json>", string(data))
 }
 
-// showcaseCard returns a complete A2UI showcase containing all controls supported by a2term.
+// showcaseCard returns a complete A2UI showcase containing all controls supported by github.com/muncus/a2term.
 func showcaseCard() string {
 	components := []map[string]any{
 		{
@@ -144,7 +144,7 @@ func showcaseCard() string {
 			"component": "TextField",
 			"id":        "tf_notes",
 			"label":     "User Notes / Search query",
-			"value":     "a2term interactive test",
+			"value":     "github.com/muncus/a2term interactive test",
 		},
 		{
 			"component": "Divider",

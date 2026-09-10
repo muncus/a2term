@@ -24,7 +24,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 
-	a2aclient "a2term/pkg/a2a"
+	a2aclient "github.com/muncus/a2term/pkg/a2a"
 )
 
 func TestExtractText(t *testing.T) {
