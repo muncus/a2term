@@ -37,14 +37,15 @@ const (
 
 // Model represents the top-level Bubble Tea state for github.com/muncus/a2term.
 type Model struct {
-	client   agent.Client
-	agentURL string
-	cardURL  string
-	items    []FeedItem
-	viewport viewport.Model
-	input    textinput.Model
-	spinner  spinner.Model
-	styles   Styles
+	client    agent.Client
+	agentURL  string
+	cardURL   string
+	authToken string
+	items     []FeedItem
+	viewport  viewport.Model
+	input     textinput.Model
+	spinner   spinner.Model
+	styles    Styles
 
 	width int
 	height int
@@ -68,6 +69,7 @@ type Config struct {
 	Client     agent.Client
 	AgentURL   string
 	CardURL    string
+	AuthToken  string
 	InitialErr error
 }
 
@@ -110,6 +112,7 @@ func NewModel(cfg Config) Model {
 		client:              cfg.Client,
 		agentURL:            cfg.AgentURL,
 		cardURL:             cfg.CardURL,
+		authToken:           cfg.AuthToken,
 		items:               make([]FeedItem, 0),
 		viewport:            vp,
 		input:               ti,

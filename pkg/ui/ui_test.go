@@ -754,6 +754,40 @@ func TestModelMouseClickBetweenMultipleSurfaces(t *testing.T) {
 	}
 }
 
+func TestModelAuthTokenConfig(t *testing.T) {
+	m := ui.NewModel(ui.Config{
+		AuthToken: "token-abc",
+	})
+	if m.AuthToken() != "token-abc" {
+		t.Errorf("expected AuthToken to be 'token-abc', got %q", m.AuthToken())
+	}
+}
+
+func TestModelAuthCommand(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	// Enter /auth token-123
+	for _, r := range "/auth token-123" {
+		updated, _ = updated.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model := updated.(ui.Model)
+	if model.AuthToken() != "token-123" {
+		t.Errorf("expected AuthToken to be 'token-123', got %q", model.AuthToken())
+	}
+
+	// Enter /auth clear
+	for _, r := range "/auth clear" {
+		updated, _ = updated.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = updated.(ui.Model)
+	if model.AuthToken() != "" {
+		t.Errorf("expected AuthToken to be cleared, got %q", model.AuthToken())
+	}
+}
+
 
 
 

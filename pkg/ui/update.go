@@ -485,6 +485,7 @@ func (m Model) handleCommand(cmdStr string) (tea.Model, tea.Cmd) {
 		sb.WriteString("  /reset           - Reset active A2A session & task context\n")
 		sb.WriteString("  /agent <url>     - Connect to agent endpoint URL\n")
 		sb.WriteString("  /card <url>      - Resolve and connect using Agent Card URL\n")
+		sb.WriteString("  /auth <token>    - Set or update bearer authorization token\n")
 		sb.WriteString("  /quit, /exit     - Exit github.com/muncus/a2term\n\n")
 		sb.WriteString("⌨️ Keybindings:\n")
 		sb.WriteString("  [Tab]            - Focus interactive A2UI surface / cycle controls\n")
@@ -524,7 +525,7 @@ func (m Model) handleCommand(cmdStr string) (tea.Model, tea.Cmd) {
 			m.isLoading = true
 			m.status = "Connecting..."
 			m.updateViewportContent()
-			return m, m.reconnectCmd(a2a.ClientOptions{AgentURL: url}, url)
+			return m, m.reconnectCmd(a2a.ClientOptions{AgentURL: url, AuthToken: m.authToken}, url)
 		}
 
 	case "/card":
@@ -537,7 +538,37 @@ func (m Model) handleCommand(cmdStr string) (tea.Model, tea.Cmd) {
 			m.isLoading = true
 			m.status = "Resolving card..."
 			m.updateViewportContent()
-			return m, m.reconnectCmd(a2a.ClientOptions{CardURL: url}, url)
+			return m, m.reconnectCmd(a2a.ClientOptions{CardURL: url, AuthToken: m.authToken}, url)
+		}
+
+	case "/auth":
+		if len(parts) < 2 {
+			if m.authToken != "" {
+				m.items = append(m.items, NewSystemItem(uuid.NewString(), "Bearer token is currently configured."))
+			} else {
+				m.items = append(m.items, NewSystemItem(uuid.NewString(), "No bearer token configured. Usage: /auth <token>"))
+			}
+		} else {
+			token := strings.TrimSpace(parts[1])
+			if token == "none" || token == "clear" || token == `""` {
+				m.authToken = ""
+				m.items = append(m.items, NewSystemItem(uuid.NewString(), "Bearer authorization token cleared."))
+			} else {
+				m.authToken = token
+				m.items = append(m.items, NewSystemItem(uuid.NewString(), "Bearer authorization token updated."))
+			}
+			target := m.agentURL
+			opts := a2a.ClientOptions{AgentURL: target, AuthToken: m.authToken}
+			if target == "" {
+				target = m.cardURL
+				opts = a2a.ClientOptions{CardURL: target, AuthToken: m.authToken}
+			}
+			if target != "" {
+				m.isLoading = true
+				m.status = "Reconnecting with updated auth..."
+				m.updateViewportContent()
+				return m, m.reconnectCmd(opts, target)
+			}
 		}
 
 	case "/quit", "/exit":

@@ -63,3 +63,8 @@ func (m *Model) EnsureLineRangeVisibleForTest(startLine, endLine int) {
 	m.ensureLineRangeVisible(startLine, endLine)
 }
 
+// AuthToken returns the model's configured auth token for testing.
+func (m Model) AuthToken() string {
+	return m.authToken
+}
+

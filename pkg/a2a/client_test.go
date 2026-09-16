@@ -382,3 +382,206 @@ func TestClientOmitTaskIDOnTerminalState(t *testing.T) {
 		t.Errorf("step 3: expected contextId 'thread-123' preserved, got %q", receivedContextIDs[2])
 	}
 }
+
+func TestFormatAuthHeader(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"secret123", "Bearer secret123"},
+		{"  secret123  ", "Bearer secret123"},
+		{"my-token-xyz", "Bearer my-token-xyz"},
+		{"ghp_abc123456789", "Bearer ghp_abc123456789"},
+	}
+
+	for _, tt := range tests {
+		got := a2aclient.FormatAuthHeader(tt.input)
+		if got != tt.expected {
+			t.Errorf("FormatAuthHeader(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestClientAuthHeaderJSONRPC(t *testing.T) {
+	var currentExpectedToken = "Bearer secret-token-xyz"
+	var cardAuthHeader, callAuthHeader string
+
+	mux := http.NewServeMux()
+	var serverURL string
+
+	mux.HandleFunc("/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
+		cardAuthHeader = r.Header.Get("Authorization")
+		if cardAuthHeader != currentExpectedToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error": "unauthorized"}`))
+			return
+		}
+		card := a2a.AgentCard{
+			Name:        "Auth Agent",
+			Description: "Mock agent requiring auth",
+			SupportedInterfaces: []*a2a.AgentInterface{
+				{
+					URL:             serverURL,
+					ProtocolBinding: a2a.TransportProtocolJSONRPC,
+					ProtocolVersion: a2a.Version,
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(card)
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		callAuthHeader = r.Header.Get("Authorization")
+		if callAuthHeader != currentExpectedToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error": "unauthorized"}`))
+			return
+		}
+
+		var req map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		resp := map[string]any{
+			"jsonrpc": "2.0",
+			"id":      req["id"],
+			"result": map[string]any{
+				"message": map[string]any{
+					"messageId": "resp-auth-1",
+					"role":      "ROLE_AGENT",
+					"parts": []map[string]any{
+						{"text": "Authorized response!"},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	ctx := context.Background()
+
+	// 1. Test connecting with CardURL without auth token - should fail because card endpoint returns 401
+	_, err := a2aclient.NewClient(ctx, a2aclient.ClientOptions{
+		CardURL: serverURL + "/.well-known/agent-card.json",
+	})
+	if err == nil {
+		t.Fatal("expected connection without auth token to fail on 401")
+	}
+
+	// 2. Test connecting with token value
+	client, err := a2aclient.NewClient(ctx, a2aclient.ClientOptions{
+		AgentURL:  serverURL,
+		AuthToken: "secret-token-xyz",
+	})
+	if err != nil {
+		t.Fatalf("failed to connect with auth token: %v", err)
+	}
+
+	if cardAuthHeader != "Bearer secret-token-xyz" {
+		t.Errorf("card endpoint received header %q, want %q", cardAuthHeader, "Bearer secret-token-xyz")
+	}
+
+	if client.AuthToken() != "secret-token-xyz" {
+		t.Errorf("client.AuthToken() = %q, want %q", client.AuthToken(), "secret-token-xyz")
+	}
+
+	resp, err := client.SendMessage(ctx, "hello")
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+	if resp != "Authorized response!" {
+		t.Errorf("expected 'Authorized response!', got %q", resp)
+	}
+	if callAuthHeader != "Bearer secret-token-xyz" {
+		t.Errorf("call endpoint received header %q, want %q", callAuthHeader, "Bearer secret-token-xyz")
+	}
+
+	// 3. Test dynamic update of AuthToken
+	currentExpectedToken = "Bearer new-token-123"
+	client.SetAuthToken("new-token-123")
+	if client.AuthToken() != "new-token-123" {
+		t.Errorf("expected AuthToken to be updated to 'new-token-123', got %q", client.AuthToken())
+	}
+
+	resp, err = client.SendMessage(ctx, "hello again")
+	if err != nil {
+		t.Fatalf("SendMessage with updated token failed: %v", err)
+	}
+	if callAuthHeader != "Bearer new-token-123" {
+		t.Errorf("call endpoint received updated header %q, want %q", callAuthHeader, "Bearer new-token-123")
+	}
+}
+
+func TestClientAuthHeaderREST(t *testing.T) {
+	const expectedToken = "Bearer rest-token-456"
+	var receivedAuthHeader string
+
+	mux := http.NewServeMux()
+	var serverURL string
+
+	mux.HandleFunc("/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
+		card := a2a.AgentCard{
+			Name: "REST Auth Agent",
+			SupportedInterfaces: []*a2a.AgentInterface{
+				{
+					URL:             serverURL,
+					ProtocolBinding: a2a.TransportProtocolHTTPJSON,
+					ProtocolVersion: a2a.Version,
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(card)
+	})
+
+	mux.HandleFunc("/message:send", func(w http.ResponseWriter, r *http.Request) {
+		receivedAuthHeader = r.Header.Get("Authorization")
+		if receivedAuthHeader != expectedToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		resp := map[string]any{
+			"message": map[string]any{
+				"messageId": "resp-rest-auth-1",
+				"role":      "ROLE_AGENT",
+				"parts": []map[string]any{
+					{"text": "REST response!"},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	ctx := context.Background()
+	client, err := a2aclient.NewClient(ctx, a2aclient.ClientOptions{
+		AgentURL:  serverURL,
+		AuthToken: "rest-token-456",
+	})
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+
+	resp, err := client.SendMessage(ctx, "hello REST")
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+	if resp != "REST response!" {
+		t.Errorf("expected 'REST response!', got %q", resp)
+	}
+	if receivedAuthHeader != expectedToken {
+		t.Errorf("expected header %q, got %q", expectedToken, receivedAuthHeader)
+	}
+}
+

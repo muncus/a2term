@@ -37,6 +37,7 @@ type Client struct {
 	mu        sync.RWMutex
 	baseURL   string
 	cardURL   string
+	authToken string
 	card      *a2a.AgentCard
 	client    *a2aclient.Client
 	contextID string
@@ -45,15 +46,48 @@ type Client struct {
 
 // ClientOptions holds options for constructing a Client.
 type ClientOptions struct {
-	AgentURL string
-	CardURL  string
+	AgentURL  string
+	CardURL   string
+	AuthToken string
+}
+
+// FormatAuthHeader formats a token into a Bearer Authorization header value.
+// If a token is provided, it formats it as "Bearer <token>".
+// If the token is empty, it returns an empty string.
+func FormatAuthHeader(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	return "Bearer " + token
+}
+
+type authInterceptor struct {
+	getAuthHeader func() string
+}
+
+func (a *authInterceptor) Before(ctx context.Context, req *a2aclient.Request) (context.Context, any, error) {
+	if a.getAuthHeader != nil {
+		if header := a.getAuthHeader(); header != "" {
+			if req.ServiceParams == nil {
+				req.ServiceParams = make(a2aclient.ServiceParams)
+			}
+			req.ServiceParams["Authorization"] = []string{header}
+		}
+	}
+	return ctx, nil, nil
+}
+
+func (a *authInterceptor) After(ctx context.Context, resp *a2aclient.Response) error {
+	return nil
 }
 
 // NewClient initializes a new A2A client given an Agent URL or Card URL.
 func NewClient(ctx context.Context, opts ClientOptions) (*Client, error) {
 	c := &Client{
-		baseURL: strings.TrimRight(opts.AgentURL, "/"),
-		cardURL: opts.CardURL,
+		baseURL:   strings.TrimRight(opts.AgentURL, "/"),
+		cardURL:   opts.CardURL,
+		authToken: opts.AuthToken,
 	}
 
 	if c.baseURL == "" && c.cardURL == "" {
@@ -80,8 +114,15 @@ func (c *Client) Connect(ctx context.Context) error {
 		targetURL = c.baseURL
 	}
 
+	authHeader := FormatAuthHeader(c.authToken)
+
 	// Try resolving agent card first
 	resolver := agentcard.DefaultResolver
+	var cardOpts []agentcard.ResolveOption
+	if authHeader != "" {
+		cardOpts = append(cardOpts, agentcard.WithRequestHeader("Authorization", authHeader))
+	}
+
 	if c.cardURL != "" {
 		// If explicit card URL provided
 		u, parseErr := url.Parse(c.cardURL)
@@ -89,17 +130,30 @@ func (c *Client) Connect(ctx context.Context) error {
 			path := u.Path
 			u.Path = ""
 			base := u.String()
-			card, err = resolver.Resolve(ctx, base, agentcard.WithPath(path))
+			opts := append([]agentcard.ResolveOption{agentcard.WithPath(path)}, cardOpts...)
+			card, err = resolver.Resolve(ctx, base, opts...)
+		} else {
+			card, err = resolver.Resolve(ctx, c.cardURL, cardOpts...)
 		}
 	} else if c.baseURL != "" {
-		card, err = resolver.Resolve(ctx, c.baseURL)
+		card, err = resolver.Resolve(ctx, c.baseURL, cardOpts...)
+	}
+
+	factoryOpts := []a2aclient.FactoryOption{
+		a2aclient.WithCallInterceptors(&authInterceptor{
+			getAuthHeader: func() string {
+				c.mu.RLock()
+				defer c.mu.RUnlock()
+				return FormatAuthHeader(c.authToken)
+			},
+		}),
 	}
 
 	var createErr error
 	if err == nil && card != nil {
 		c.card = card
 		var cli *a2aclient.Client
-		cli, createErr = a2aclient.NewFromCard(ctx, card)
+		cli, createErr = a2aclient.NewFromCard(ctx, card, factoryOpts...)
 		if createErr == nil {
 			c.client = cli
 			return nil
@@ -112,7 +166,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			a2a.NewAgentInterface(c.baseURL, a2a.TransportProtocolJSONRPC),
 			a2a.NewAgentInterface(c.baseURL, a2a.TransportProtocolHTTPJSON),
 		}
-		cli, epErr := a2aclient.NewFromEndpoints(ctx, endpoints)
+		cli, epErr := a2aclient.NewFromEndpoints(ctx, endpoints, factoryOpts...)
 		if epErr == nil {
 			c.client = cli
 			return nil
@@ -153,6 +207,20 @@ func (c *Client) AgentName() string {
 		return c.baseURL
 	}
 	return "A2A Agent"
+}
+
+// AuthToken returns the configured authentication token.
+func (c *Client) AuthToken() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.authToken
+}
+
+// SetAuthToken updates the authentication token used by the client for future requests.
+func (c *Client) SetAuthToken(token string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.authToken = token
 }
 
 // CurrentSession returns the current ContextID and TaskID encapsulated in agent.SessionInfo.

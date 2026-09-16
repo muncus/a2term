@@ -42,10 +42,17 @@ Or connect directly with a specific Agent Card URL:
 ./a2term --card http://localhost:8080/.well-known/agent-card.json
 ```
 
+Supply a bearer token for authentication:
+
+```bash
+./a2term --agent http://localhost:8080 --auth secret-token
+```
+
 You can also set environment variables:
 
 ```bash
 export A2A_AGENT_URL=http://localhost:8080
+export A2A_AUTH_TOKEN=secret-token
 ./a2term
 ```
 
@@ -58,6 +65,7 @@ While in the chat interface, you can run commands:
 - `/reset`: Reset current task and context IDs.
 - `/agent <url>`: Connect or switch to an agent endpoint.
 - `/card <url>`: Resolve and connect using an Agent Card URL.
+- `/auth <token>`: Set or update bearer authorization token.
 - `/quit` or `/exit`: Exit the application.
 
 ## Keybindings

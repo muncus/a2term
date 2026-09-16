@@ -35,6 +35,7 @@ var (
 func main() {
 	agentFlag := flag.String("agent", "", "URL of the A2A agent endpoint (e.g. http://localhost:8080)")
 	cardFlag := flag.String("card", "", "URL of the A2A Agent Card (e.g. http://localhost:8080/.well-known/agent-card.json)")
+	authFlag := flag.String("auth", "", "Bearer token for authorization header")
 	flag.StringVar(agentFlag, "a", "", "Short for --agent")
 	flag.StringVar(cardFlag, "c", "", "Short for --card")
 	versionFlag := flag.Bool("version", false, "Print version and exit")
@@ -48,6 +49,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
 		fmt.Fprintf(os.Stderr, "  A2A_AGENT_URL    Default agent endpoint URL\n")
 		fmt.Fprintf(os.Stderr, "  A2A_CARD_URL     Default agent card URL\n")
+		fmt.Fprintf(os.Stderr, "  A2A_AUTH_TOKEN   Default bearer auth token\n")
 	}
 
 	flag.Parse()
@@ -67,13 +69,19 @@ func main() {
 		cardURL = os.Getenv("A2A_CARD_URL")
 	}
 
+	authToken := *authFlag
+	if authToken == "" {
+		authToken = os.Getenv("A2A_AUTH_TOKEN")
+	}
+
 	var client agent.Client
 	var initErr error
 	if agentURL != "" || cardURL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		cli, err := a2a.NewClient(ctx, a2a.ClientOptions{
-			AgentURL: agentURL,
-			CardURL:  cardURL,
+			AgentURL:  agentURL,
+			CardURL:   cardURL,
+			AuthToken: authToken,
 		})
 		cancel()
 		if err != nil {
@@ -87,6 +95,7 @@ func main() {
 		Client:     client,
 		AgentURL:   agentURL,
 		CardURL:    cardURL,
+		AuthToken:  authToken,
 		InitialErr: initErr,
 	}
 
