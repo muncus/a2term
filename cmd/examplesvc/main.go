@@ -115,6 +115,14 @@ func extractUserAction(msg *a2a.Message) (actionName string, sourceID string, ct
 		}
 		if d := part.Data(); d != nil {
 			if m, ok := d.(map[string]any); ok {
+				if actMap, ok := m["action"].(map[string]any); ok {
+					name, _ := actMap["name"].(string)
+					src, _ := actMap["sourceComponentId"].(string)
+					ctx, _ := actMap["context"].(map[string]any)
+					if name != "" {
+						return name, src, ctx, true
+					}
+				}
 				if act, ok := m["action"].(string); ok && act != "" {
 					src, _ := m["sourceId"].(string)
 					ctx, _ := m["context"].(map[string]any)

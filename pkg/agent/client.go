@@ -41,4 +41,8 @@ type Client interface {
 
 	// SendActionEvent dispatches an A2UI interaction event (e.g. button click or form submit) back to the agent.
 	SendActionEvent(ctx context.Context, actionName string, sourceID string, contextValues map[string]any) (string, error)
+
+	// SendA2UIAction dispatches a full A2UI ActionEvent with optional surfaceID and client data model back to the agent.
+	SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) (string, error)
 }
+

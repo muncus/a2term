@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
@@ -31,6 +32,55 @@ import (
 )
 
 var _ agent.Client = (*Client)(nil)
+
+const (
+	// A2UIMIMEType is the standard A2UI MIME type (v0.9.1+).
+	A2UIMIMEType = "application/a2ui+json"
+	// A2UIMIMETypeLegacy is the legacy A2UI MIME type (v0.9).
+	A2UIMIMETypeLegacy = "application/json+a2ui"
+	// ClientCapabilitiesKey is the A2A message metadata key for A2UI capabilities.
+	ClientCapabilitiesKey = "a2uiClientCapabilities"
+	// ClientDataModelKey is the A2A message metadata key for A2UI client data model.
+	ClientDataModelKey = "a2uiClientDataModel"
+	// A2UIBasicCatalogID is the canonical v0.9 basic component catalog URI.
+	A2UIBasicCatalogID = "https://a2ui.org/catalogs/v0.9/basic.json"
+)
+
+// DefaultClientCapabilities returns the standardized A2UI v0.9.1 client capabilities map.
+func DefaultClientCapabilities() map[string]any {
+	return map[string]any{
+		"v0.9.1": map[string]any{
+			"supportedCatalogIds": []string{
+				A2UIBasicCatalogID,
+			},
+			"acceptsInlineCatalogs": false,
+		},
+	}
+}
+
+func applyClientCapabilities(msg *a2a.Message) {
+	if msg == nil {
+		return
+	}
+	msg.SetMeta(ClientCapabilitiesKey, DefaultClientCapabilities())
+}
+
+// IsA2UIPart reports whether a part carries A2UI content based on MIME type or metadata.
+func IsA2UIPart(part *a2a.Part) bool {
+	if part == nil {
+		return false
+	}
+	if part.MediaType == A2UIMIMEType || part.MediaType == A2UIMIMETypeLegacy {
+		return true
+	}
+	if part.Metadata != nil {
+		if mt, ok := part.Metadata["mimeType"].(string); ok && (mt == A2UIMIMEType || mt == A2UIMIMETypeLegacy) {
+			return true
+		}
+	}
+	return false
+}
+
 
 // Client wraps an A2A client instance and manages conversation state.
 type Client struct {
@@ -255,6 +305,7 @@ func (c *Client) SendMessage(ctx context.Context, text string) (string, error) {
 	}
 
 	userMsg := a2a.NewMessageForTask(a2a.MessageRoleUser, taskInfo, a2a.NewTextPart(text))
+	applyClientCapabilities(userMsg)
 	req := &a2a.SendMessageRequest{
 		Message: userMsg,
 	}
@@ -271,6 +322,11 @@ func (c *Client) SendMessage(ctx context.Context, text string) (string, error) {
 
 // SendActionEvent sends an interaction event (such as a button click or form submission) back to the agent.
 func (c *Client) SendActionEvent(ctx context.Context, actionName string, sourceID string, contextValues map[string]any) (string, error) {
+	return c.SendA2UIAction(ctx, actionName, "", sourceID, contextValues, nil)
+}
+
+// SendA2UIAction sends a full A2UI interaction event with optional surfaceID and client data model.
+func (c *Client) SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) (string, error) {
 	c.mu.Lock()
 	if c.client == nil {
 		c.mu.Unlock()
@@ -282,18 +338,42 @@ func (c *Client) SendActionEvent(ctx context.Context, actionName string, sourceI
 		ContextID: c.contextID,
 	}
 
-	payload := map[string]any{
-		"action":   actionName,
-		"sourceId": sourceID,
-		"context":  contextValues,
+	actionPayload := map[string]any{
+		"name":              actionName,
+		"sourceComponentId": sourceID,
+		"timestamp":         time.Now().UTC().Format(time.RFC3339),
+		"context":           contextValues,
+	}
+	if surfaceID != "" {
+		actionPayload["surfaceId"] = surfaceID
+	} else if sID, ok := contextValues["surfaceId"].(string); ok && sID != "" {
+		actionPayload["surfaceId"] = sID
 	}
 
-	// Create user message with action data and text representation
-	dataPart := a2a.NewDataPart(payload)
-	jsonBytes, _ := json.Marshal(payload)
+	clientMsg := map[string]any{
+		"version": "v0.9",
+		"action":  actionPayload,
+		// For backward compatibility with older handlers expecting flat action:
+		"actionName": actionName,
+		"sourceId":   sourceID,
+		"context":    contextValues,
+	}
+
+	dataPart := a2a.NewDataPart(clientMsg)
+	dataPart.MediaType = A2UIMIMEType
+	dataPart.Metadata = map[string]any{
+		"mimeType": A2UIMIMEType,
+	}
+
+	jsonBytes, _ := json.Marshal(clientMsg)
 	textPart := a2a.NewTextPart(string(jsonBytes))
 
 	userMsg := a2a.NewMessageForTask(a2a.MessageRoleUser, taskInfo, dataPart, textPart)
+	applyClientCapabilities(userMsg)
+	if clientDataModel != nil {
+		userMsg.SetMeta(ClientDataModelKey, clientDataModel)
+	}
+
 	req := &a2a.SendMessageRequest{
 		Message: userMsg,
 	}
@@ -322,11 +402,13 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 	}
 
 	userMsg := a2a.NewMessageForTask(a2a.MessageRoleUser, taskInfo, a2a.NewTextPart(text))
+	applyClientCapabilities(userMsg)
 	req := &a2a.SendMessageRequest{
 		Message: userMsg,
 	}
 	client := c.client
 	c.mu.Unlock()
+
 
 	var accumulated strings.Builder
 	for event, err := range client.SendStreamingMessage(ctx, req) {
@@ -509,6 +591,18 @@ func extractPartsText(parts a2a.ContentParts) string {
 		if part == nil {
 			continue
 		}
+		if IsA2UIPart(part) {
+			raw := extractPartRawOrData(part)
+			trimmed := strings.TrimSpace(raw)
+			if trimmed != "" {
+				if strings.HasPrefix(trimmed, "<a2ui-json>") {
+					sb.WriteString(trimmed)
+				} else {
+					sb.WriteString("\n<a2ui-json>\n" + trimmed + "\n</a2ui-json>\n")
+				}
+			}
+			continue
+		}
 		if t := part.Text(); t != "" {
 			sb.WriteString(t)
 		} else if r := part.Raw(); len(r) > 0 {
@@ -536,4 +630,25 @@ func extractPartsText(parts a2a.ContentParts) string {
 	}
 	return sb.String()
 }
+
+func extractPartRawOrData(part *a2a.Part) string {
+	if t := part.Text(); t != "" {
+		return t
+	}
+	if r := part.Raw(); len(r) > 0 {
+		return string(r)
+	}
+	if d := part.Data(); d != nil {
+		switch v := d.(type) {
+		case string:
+			return v
+		default:
+			if b, err := json.Marshal(v); err == nil {
+				return string(b)
+			}
+		}
+	}
+	return ""
+}
+
 

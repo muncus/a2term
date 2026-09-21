@@ -57,6 +57,11 @@ func (m *mockClient) SendActionEvent(ctx context.Context, actionName string, sou
 	return "action response: " + actionName, nil
 }
 
+func (m *mockClient) SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) (string, error) {
+	return "action response: " + actionName, nil
+}
+
+
 func TestClientInterface(t *testing.T) {
 	var cli agent.Client = &mockClient{
 		name: "TestAgent",
