@@ -24,6 +24,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/joestump-agent/a2tea/render"
+	"github.com/muncus/a2term/pkg/a2ui"
 	"github.com/muncus/a2term/pkg/agent"
 )
 
@@ -53,6 +55,10 @@ type Model struct {
 
 	focusMode           FocusMode
 	focusedSurfaceIndex int // Index into items pointing to the focused KindAgentSurface, or -1
+
+	surfaceManager *a2ui.SurfaceManager
+	dispatcher     *a2ui.Dispatcher
+	surfaceFeedMap map[string]string // surfaceID -> feedItem.ID
 
 	status        string
 	isLoading     bool
@@ -108,6 +114,9 @@ func NewModel(cfg Config) Model {
 		initialStatus = "Disconnected"
 	}
 
+	sm := a2ui.NewSurfaceManager()
+	disp := a2ui.NewDispatcher(sm, render.WithStyles(a2ui.DefaultTerminalStyles()))
+
 	m := Model{
 		client:              cfg.Client,
 		agentURL:            cfg.AgentURL,
@@ -120,6 +129,9 @@ func NewModel(cfg Config) Model {
 		styles:              styles,
 		focusMode:           FocusInput,
 		focusedSurfaceIndex: -1,
+		surfaceManager:      sm,
+		dispatcher:          disp,
+		surfaceFeedMap:      make(map[string]string),
 		status:              initialStatus,
 	}
 
