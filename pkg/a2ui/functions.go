@@ -74,6 +74,16 @@ func ResolveValue(val any, store *DataModelStore, scope map[string]any) any {
 	if val == nil {
 		return nil
 	}
+	if ds, ok := val.(*tmca2ui.DynamicString); ok {
+		if s, ok := ResolveDynamicString(ds, store, scope); ok {
+			return s
+		}
+	}
+	if ds, ok := val.(tmca2ui.DynamicString); ok {
+		if s, ok := ResolveDynamicString(&ds, store, scope); ok {
+			return s
+		}
+	}
 	if m, ok := val.(map[string]any); ok {
 		// Check for data binding: {"path": "/..."}
 		if path, hasPath := m["path"].(string); hasPath {

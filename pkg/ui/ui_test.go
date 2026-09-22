@@ -44,7 +44,22 @@ func TestModelInit(t *testing.T) {
 func TestModelWindowSize(t *testing.T) {
 	m := ui.NewModel(ui.Config{})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	model := updated.(ui.Model)
 	view := updated.View()
+
+
+	if lipgloss.Height(model.RenderHeaderForTest()) != 2 {
+		t.Errorf("expected header height to be 2, got %d", lipgloss.Height(model.RenderHeaderForTest()))
+	}
+	if lipgloss.Height(model.RenderFooterForTest()) != 2 {
+		t.Errorf("expected footer height to be 2, got %d", lipgloss.Height(model.RenderFooterForTest()))
+	}
+	if lipgloss.Height(model.RenderInputForTest()) != 3 {
+		t.Errorf("expected input height to be 3, got %d", lipgloss.Height(model.RenderInputForTest()))
+	}
+	if lipgloss.Height(view.Content) != 40 {
+		t.Errorf("expected total view height to be 40, got %d", lipgloss.Height(view.Content))
+	}
 
 	if !strings.Contains(view.Content, "github.com/muncus/a2term") {
 		t.Errorf("expected view to render title 'github.com/muncus/a2term', got %q", view.Content)
@@ -739,8 +754,8 @@ func TestModelMouseClickBetweenMultipleSurfaces(t *testing.T) {
 	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surface1))
 	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surface2))
 
-	// Click on second surface (lower down in viewport, Y=20, index 3)
-	updated, _ = updated.Update(tea.MouseClickMsg{X: 10, Y: 20, Button: tea.MouseLeft})
+	// Click on second surface (lower down in viewport, Y=18, index 3)
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 10, Y: 18, Button: tea.MouseLeft})
 	model := updated.(ui.Model)
 	if model.FocusMode() != ui.FocusSurface || model.FocusedSurfaceIndex() != 3 {
 		t.Errorf("expected surface index 3 focused, got mode=%v idx=%d", model.FocusMode(), model.FocusedSurfaceIndex())
@@ -787,6 +802,75 @@ func TestModelAuthCommand(t *testing.T) {
 		t.Errorf("expected AuthToken to be cleared, got %q", model.AuthToken())
 	}
 }
+
+func TestModelThinkingSpinnerInFooterStatusLine(t *testing.T) {
+	mockClient := &a2uiTestClient{}
+	m := ui.NewModel(ui.Config{
+		Client: mockClient,
+	})
+	res, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	model := res.(ui.Model)
+
+	// Initially, header shows Connected or Ready, footer shows placeholder, no Thinking spinner, no shortcut keys
+	headerInitial := model.RenderHeaderForTest()
+	footerInitial := model.RenderFooterForTest()
+
+	if strings.Contains(headerInitial, "Thinking...") {
+		t.Errorf("header should not contain 'Thinking...' initially: %q", headerInitial)
+	}
+	if strings.Contains(footerInitial, "Thinking...") {
+		t.Errorf("footer should not contain 'Thinking...' initially: %q", footerInitial)
+	}
+	if !strings.Contains(footerInitial, "● Connected") && !strings.Contains(footerInitial, "● Ready") {
+		t.Errorf("footer should contain placeholder ('● Connected' or '● Ready') initially, got: %q", footerInitial)
+	}
+	if strings.Contains(footerInitial, "Tab") || strings.Contains(footerInitial, "Ctrl+C") {
+		t.Errorf("footer should not contain shortcut keys: %q", footerInitial)
+	}
+
+	// Send a user prompt to trigger Thinking state
+	for _, r := range "Hello agent" {
+		res, _ = model.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		model = res.(ui.Model)
+	}
+	res, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	model = res.(ui.Model)
+
+	headerThinking := model.RenderHeaderForTest()
+	footerThinking := model.RenderFooterForTest()
+
+	// 1. Header must NOT contain Thinking spinner or text
+	if strings.Contains(headerThinking, "Thinking...") {
+		t.Errorf("header should NOT contain 'Thinking...' during loading, got: %q", headerThinking)
+	}
+
+	// 2. Footer (bottom status line near text input) MUST contain Thinking spinner and text, and no shortcut keys
+	if !strings.Contains(footerThinking, "Thinking...") {
+		t.Errorf("footer should contain 'Thinking...' during loading, got: %q", footerThinking)
+	}
+	if strings.Contains(footerThinking, "Tab") || strings.Contains(footerThinking, "Ctrl+C") {
+		t.Errorf("footer should not contain shortcut keys during thinking: %q", footerThinking)
+	}
+
+	// 3. Ensure total view height is exactly 40 and not pushed off-screen
+	viewThinking := model.View()
+	if lipgloss.Height(viewThinking.Content) != 40 {
+		t.Errorf("expected view height to be 40, got %d", lipgloss.Height(viewThinking.Content))
+	}
+
+	// 4. Test standard 24-row terminal
+	res24, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model24 := res24.(ui.Model)
+	view24 := model24.View()
+	if lipgloss.Height(view24.Content) != 24 {
+		t.Errorf("expected 24-row view height to be 24, got %d", lipgloss.Height(view24.Content))
+	}
+	footer24 := model24.RenderFooterForTest()
+	if !strings.Contains(footer24, "Thinking...") {
+		t.Errorf("expected 24-row footer to contain Thinking..., got %q", footer24)
+	}
+}
+
 
 
 

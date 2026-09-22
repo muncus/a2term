@@ -17,6 +17,8 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -147,8 +149,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case event.ButtonClicked:
-		// a2tea emits a native tmca2ui.ClientMessage alongside ButtonClicked with full form context.
-		// Action dispatch is handled in tmca2ui.ClientMessage to prevent duplicate dispatch.
+		// Client-side actions (such as openUrl function calls) are handled here,
+		// but responses to the model/server use ClientMessage to prevent duplicate dispatch.
+		if m.surfaceManager == nil {
+			return m, nil
+		}
+
+		surfaceID := msg.Source.SurfaceID
+		if surfaceID == "" && m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) {
+			surfaceID = m.items[m.focusedSurfaceIndex].SurfaceID
+		}
+		if surfaceID == "" {
+			surfaceID = "default"
+		}
+
+		st, ok := m.surfaceManager.GetSurface(surfaceID)
+		if !ok {
+			return m, nil
+		}
+
+		comp, ok := st.Components[msg.ID]
+		if !ok || comp.Button == nil || comp.Button.Action.FunctionCall == nil {
+			return m, nil
+		}
+
+		fn := comp.Button.Action.FunctionCall
+		if strings.EqualFold(fn.Call, "openUrl") {
+			rawURL, _ := fn.Args["url"]
+			resolved := a2ui.ResolveValue(rawURL, st.DataStore, nil)
+			targetURL := fmt.Sprintf("%v", resolved)
+			if targetURL != "" && targetURL != "<nil>" {
+				summary := fmt.Sprintf("Opened URL: %s", targetURL)
+				openCmd := func() tea.Msg {
+					_ = openBrowserFunc(targetURL)
+					return nil
+				}
+				return m.handleUIAction(fmt.Sprintf("🔗 %s", summary), openCmd)
+			}
+		}
 		return m, nil
 
 	case event.InputSubmitted:
@@ -901,6 +939,21 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+var openBrowserFunc = openBrowser
+
+func openBrowser(targetURL string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", targetURL)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", targetURL)
+	default:
+		cmd = exec.Command("xdg-open", targetURL)
+	}
+	return cmd.Start()
 }
 
 

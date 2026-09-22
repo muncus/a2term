@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/joestump-agent/a2tea/event"
 	"github.com/muncus/a2term/pkg/agent"
 	"github.com/muncus/a2term/pkg/ui"
 	tmca2ui "github.com/tmc/a2ui"
@@ -277,3 +278,84 @@ func TestA2UI_Checklist_ClientValidationBeforeDispatch(t *testing.T) {
 		t.Errorf("expected viewport to contain 'Invalid password', got:\n%s", vpContent)
 	}
 }
+
+func TestA2UI_Checklist_OpenURLClientAction(t *testing.T) {
+	var openedURLs []string
+	cleanup := ui.SetOpenBrowserFuncForTest(func(targetURL string) error {
+		openedURLs = append(openedURLs, targetURL)
+		return nil
+	})
+	defer cleanup()
+
+	cli := &a2uiTestClient{}
+	m := ui.NewModel(ui.Config{
+		Client:   cli,
+		AgentURL: "http://localhost:9999",
+	})
+	resM, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = resM.(ui.Model)
+
+	// Surface with an OpenURL button
+	surfaceSetup := `<a2ui-json>
+[
+  {"createSurface": {"surfaceId": "link-surf"}},
+  {"updateComponents": {"surfaceId": "link-surf", "components": [
+    {"id": "root", "component": "Card", "child": "btn"},
+    {
+      "id": "btn",
+      "component": "Button",
+      "child": "lbl",
+      "action": {
+        "functionCall": {
+          "call": "openUrl",
+          "args": {"url": "https://a2ui.org/docs"}
+        }
+      }
+    },
+    {"id": "lbl", "component": "Text", "text": "Documentation"}
+  ]}}
+]
+</a2ui-json>`
+
+	resM, _ = m.Update(ui.NewAgentResponseMsgForTest(surfaceSetup))
+	m = resM.(ui.Model)
+
+	// Focus the surface (Pressing Up when input is empty enters the surface)
+	resM, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	m = resM.(ui.Model)
+
+	// Press Enter on the focused button
+	resM, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = resM.(ui.Model)
+
+	if cmd != nil {
+		msg := cmd()
+		if ev, ok := msg.(event.ButtonClicked); ok {
+			resM, cmd = m.Update(ev)
+			m = resM.(ui.Model)
+			if cmd != nil {
+				executeCmd(cmd)
+			}
+		}
+	}
+
+	// 1. Verify openBrowserFunc was called with the target URL
+	if len(openedURLs) != 1 || openedURLs[0] != "https://a2ui.org/docs" {
+		t.Fatalf("expected openedURLs to be ['https://a2ui.org/docs'], got %v", openedURLs)
+	}
+
+	// 2. Verify no ClientMessage was sent to the server (client-side only action)
+	cli.mu.Lock()
+	actionCount := len(cli.actions)
+	cli.mu.Unlock()
+	if actionCount != 0 {
+		t.Errorf("expected 0 server actions for client-side openUrl, got %d", actionCount)
+	}
+
+	// 3. Verify UI view displays feedback
+	viewContent := m.View().Content
+	if !strings.Contains(viewContent, "Opened URL: https://a2ui.org/docs") {
+		t.Errorf("expected view to contain 'Opened URL: https://a2ui.org/docs', got:\n%s", viewContent)
+	}
+}
+

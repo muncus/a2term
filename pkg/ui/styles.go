@@ -64,6 +64,7 @@ type Styles struct {
 	Footer          lipgloss.Style
 	FooterKey       lipgloss.Style
 	FooterDesc      lipgloss.Style
+	FooterStatus    lipgloss.Style
 	ToastBox        lipgloss.Style
 	ScrollBadge     lipgloss.Style
 	ScrollAlert     lipgloss.Style
@@ -236,6 +237,10 @@ func DefaultStyles() Styles {
 
 		FooterDesc: lipgloss.NewStyle().
 			Foreground(textMuted),
+
+		FooterStatus: lipgloss.NewStyle().
+			Foreground(secondary).
+			Bold(true),
 
 		ToastBox: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFFFF")).
