@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -151,6 +152,31 @@ func NewClient(ctx context.Context, opts ClientOptions) (*Client, error) {
 	return c, nil
 }
 
+// wrapAuthError inspects err and wraps it with agent.ErrAuthFailed if it represents an
+// authentication or authorization failure (e.g. HTTP 401/403, ErrStatusNotOK, or protocol auth errors).
+func wrapAuthError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, agent.ErrAuthFailed) {
+		return err
+	}
+	if errors.Is(err, a2a.ErrUnauthenticated) || errors.Is(err, a2a.ErrUnauthorized) || errors.Is(err, a2aclient.ErrCredentialNotFound) {
+		return fmt.Errorf("%w: %v", agent.ErrAuthFailed, err)
+	}
+	var notOK *agentcard.ErrStatusNotOK
+	if errors.As(err, &notOK) {
+		if notOK.StatusCode == http.StatusUnauthorized || notOK.StatusCode == http.StatusForbidden {
+			return fmt.Errorf("%w: %v", agent.ErrAuthFailed, err)
+		}
+	}
+	var errStr = err.Error()
+	if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") {
+		return fmt.Errorf("%w: %v", agent.ErrAuthFailed, err)
+	}
+	return err
+}
+
 // Connect establishes or re-establishes connection to the A2A agent.
 func (c *Client) Connect(ctx context.Context) error {
 	c.mu.Lock()
@@ -222,19 +248,19 @@ func (c *Client) Connect(ctx context.Context) error {
 			return nil
 		}
 		if createErr != nil {
-			return fmt.Errorf("agent card resolved (%s) but transport negotiation failed: %v; direct endpoint failed: %w", card.Name, createErr, epErr)
+			return wrapAuthError(fmt.Errorf("agent card resolved (%s) but transport negotiation failed: %v; direct endpoint failed: %w", card.Name, createErr, epErr))
 		}
 		if err != nil {
-			return fmt.Errorf("agent card resolution failed (%w); direct endpoint failed: %v", err, epErr)
+			return wrapAuthError(fmt.Errorf("agent card resolution failed (%w); direct endpoint failed: %v", err, epErr))
 		}
-		return fmt.Errorf("failed to connect to agent endpoint: %w", epErr)
+		return wrapAuthError(fmt.Errorf("failed to connect to agent endpoint: %w", epErr))
 	}
 
 	if createErr != nil {
-		return fmt.Errorf("agent card resolved (%s) but transport negotiation failed: %w", card.Name, createErr)
+		return wrapAuthError(fmt.Errorf("agent card resolved (%s) but transport negotiation failed: %w", card.Name, createErr))
 	}
 	if err != nil {
-		return fmt.Errorf("failed to resolve agent card at %s: %w", targetURL, err)
+		return wrapAuthError(fmt.Errorf("failed to resolve agent card at %s: %w", targetURL, err))
 	}
 	return errors.New("unable to establish agent connection")
 }
@@ -314,7 +340,7 @@ func (c *Client) SendMessage(ctx context.Context, text string) (string, error) {
 
 	result, err := client.SendMessage(ctx, req)
 	if err != nil {
-		return "", err
+		return "", wrapAuthError(err)
 	}
 
 	return c.processResult(result)
@@ -382,7 +408,7 @@ func (c *Client) SendA2UIAction(ctx context.Context, actionName string, surfaceI
 
 	result, err := client.SendMessage(ctx, req)
 	if err != nil {
-		return "", err
+		return "", wrapAuthError(err)
 	}
 
 	return c.processResult(result)
@@ -413,8 +439,9 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 	var accumulated strings.Builder
 	for event, err := range client.SendStreamingMessage(ctx, req) {
 		if err != nil {
-			onChunk("", true, err)
-			return err
+			wrappedErr := wrapAuthError(err)
+			onChunk("", true, wrappedErr)
+			return wrappedErr
 		}
 
 		if event == nil {

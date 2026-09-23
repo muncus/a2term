@@ -25,11 +25,13 @@ type Styles struct {
 
 	// Header styles
 	Header            lipgloss.Style
-	HeaderTitle       lipgloss.Style
-	HeaderStatus      lipgloss.Style
-	HeaderStatusError lipgloss.Style
-	HeaderAgent       lipgloss.Style
-	HeaderTask        lipgloss.Style
+	HeaderTitle           lipgloss.Style
+	HeaderStatus          lipgloss.Style
+	HeaderStatusError     lipgloss.Style
+	HeaderConnectedDot    lipgloss.Style
+	HeaderDisconnectedDot lipgloss.Style
+	HeaderAgent           lipgloss.Style
+	HeaderTask            lipgloss.Style
 
 	// Chat message styles
 	UserMessageBox  lipgloss.Style
@@ -109,8 +111,17 @@ func DefaultStyles() Styles {
 			Foreground(accent).
 			Bold(true),
 
+		HeaderConnectedDot: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#10B981")).
+			Bold(true),
+
+		HeaderDisconnectedDot: lipgloss.NewStyle().
+			Foreground(accent).
+			Bold(true),
+
 		HeaderAgent: lipgloss.NewStyle().
-			Foreground(textMuted),
+			Foreground(textBright).
+			Bold(true),
 
 		HeaderTask: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F9E2AF")).

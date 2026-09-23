@@ -17,6 +17,7 @@ package a2a_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 
 	a2aclient "github.com/muncus/a2term/pkg/a2a"
+	"github.com/muncus/a2term/pkg/agent"
 )
 
 func TestExtractText(t *testing.T) {
@@ -474,6 +476,9 @@ func TestClientAuthHeaderJSONRPC(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected connection without auth token to fail on 401")
+	}
+	if !errors.Is(err, agent.ErrAuthFailed) {
+		t.Errorf("expected error to wrap agent.ErrAuthFailed, got: %v", err)
 	}
 
 	// 2. Test connecting with token value

@@ -16,6 +16,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -210,6 +211,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentResponseMsg:
 		m.isLoading = false
 		m.isStreaming = false
+		m.authFailed = false
 		m.status = "Connected"
 
 		m.appendAgentResponseContent(msg.text)
@@ -233,6 +235,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.isFinal {
 			m.isLoading = false
 			m.isStreaming = false
+			m.authFailed = false
 			m.status = "Connected"
 
 			// Remove temporary streaming item if present
@@ -266,7 +269,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentErrorMsg:
 		m.isLoading = false
 		m.isStreaming = false
-		m.status = "Error"
+		if errors.Is(msg.err, agent.ErrAuthFailed) {
+			m.status = "Auth Failed"
+			m.authFailed = true
+		} else {
+			m.status = "Error"
+		}
 
 		diag := DiagnosticInfo{
 			Title:     "Agent Communication Error",
@@ -288,6 +296,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isLoading = false
 		m.client = msg.client
 		m.status = "Connected"
+		m.authFailed = false
 		m.items = append(m.items, NewSystemItem(uuid.NewString(), fmt.Sprintf("✅ Connected to %s (%s)", msg.agentName, msg.targetURL)))
 		m.updateViewportContent()
 		m.viewport.GotoBottom()

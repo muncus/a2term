@@ -15,6 +15,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -61,6 +62,7 @@ type Model struct {
 	surfaceFeedMap map[string]string // surfaceID -> feedItem.ID
 
 	status        string
+	authFailed    bool
 	isLoading     bool
 	isStreaming   bool
 	streamingText string
@@ -106,8 +108,14 @@ func NewModel(cfg Config) Model {
 	}
 
 	initialStatus := "Ready"
+	var authFailed bool
 	if cfg.InitialErr != nil {
-		initialStatus = "Connection Failed"
+		if errors.Is(cfg.InitialErr, agent.ErrAuthFailed) {
+			initialStatus = "Auth Failed"
+			authFailed = true
+		} else {
+			initialStatus = "Connection Failed"
+		}
 	} else if cfg.Client != nil {
 		initialStatus = "Connected"
 	} else if target == "" {
@@ -133,6 +141,7 @@ func NewModel(cfg Config) Model {
 		dispatcher:          disp,
 		surfaceFeedMap:      make(map[string]string),
 		status:              initialStatus,
+		authFailed:          authFailed,
 	}
 
 	var welcome strings.Builder
@@ -265,6 +274,22 @@ func (m *Model) ReturnFocusToInput() tea.Cmd {
 	return m.input.Focus()
 }
 
+// IsConnected returns true if the client is connected without errors or auth failures.
+func (m *Model) IsConnected() bool {
+	if m.client == nil || m.authFailed {
+		return false
+	}
+	if m.status == "Connection Failed" || m.status == "Error" || m.status == "Disconnected" || m.status == "Auth Failed" {
+		return false
+	}
+	return true
+}
+
+// AuthFailed returns true if an authorization failure has occurred.
+func (m *Model) AuthFailed() bool {
+	return m.authFailed || m.status == "Auth Failed"
+}
+
 // surfaceInnerWidth computes the available inner width for an A2UI surface inside the surface container box.
 // Outer SurfaceContainer width is (totalWidth - 4). The container has 2 cells border + 2 cells padding = 4 cells chrome,
 // so inner width available to the surface without wrapping is totalWidth - 8.
@@ -275,5 +300,7 @@ func surfaceInnerWidth(totalWidth int) int {
 	}
 	return w
 }
+
+
 
 

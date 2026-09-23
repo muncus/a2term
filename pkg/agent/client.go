@@ -14,7 +14,13 @@
 
 package agent
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrAuthFailed is a sentinel error indicating that authentication or authorization failed.
+var ErrAuthFailed = errors.New("authentication failed")
 
 // SessionInfo encapsulates active conversation context and task identifiers.
 type SessionInfo struct {

@@ -25,6 +25,7 @@ import (
 	"github.com/joestump-agent/a2tea/event"
 	tmca2ui "github.com/tmc/a2ui"
 
+	"github.com/muncus/a2term/pkg/agent"
 	"github.com/muncus/a2term/pkg/ui"
 )
 
@@ -870,6 +871,97 @@ func TestModelThinkingSpinnerInFooterStatusLine(t *testing.T) {
 		t.Errorf("expected 24-row footer to contain Thinking..., got %q", footer24)
 	}
 }
+
+func TestModelHeaderAgentNameAndStatusCircle(t *testing.T) {
+	styles := ui.DefaultStyles()
+	greenCircle := styles.HeaderConnectedDot.Render("●")
+	redCircle := styles.HeaderDisconnectedDot.Render("●")
+
+	// 1. Connected state
+	mockClient := &a2uiTestClient{}
+	mConnected := ui.NewModel(ui.Config{
+		Client: mockClient,
+	})
+	res, _ := mConnected.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	modelConn := res.(ui.Model)
+	headerConn := modelConn.RenderHeaderForTest()
+
+	if !modelConn.IsConnected() {
+		t.Errorf("expected IsConnected() to be true")
+	}
+	if !strings.Contains(headerConn, greenCircle) {
+		t.Errorf("expected header to contain green circle %q, got: %q", greenCircle, headerConn)
+	}
+	if strings.Contains(headerConn, redCircle) {
+		t.Errorf("header should not contain red circle when connected: %q", headerConn)
+	}
+	if !strings.Contains(headerConn, "test-agent") {
+		t.Errorf("expected header to contain agent name 'test-agent', got: %q", headerConn)
+	}
+	if strings.Contains(headerConn, "Connected") {
+		t.Errorf("header should NOT contain 'Connected' text: %q", headerConn)
+	}
+	if strings.Contains(headerConn, "Focus:") || strings.Contains(headerConn, "💬") || strings.Contains(headerConn, "🎮") {
+		t.Errorf("header should NOT contain focus indicator: %q", headerConn)
+	}
+
+	// 2. Disconnected state (no client)
+	mDisconnected := ui.NewModel(ui.Config{})
+	resDisc, _ := mDisconnected.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	modelDisc := resDisc.(ui.Model)
+	headerDisc := modelDisc.RenderHeaderForTest()
+
+	if modelDisc.IsConnected() {
+		t.Errorf("expected IsConnected() to be false when no client")
+	}
+	if !strings.Contains(headerDisc, redCircle) {
+		t.Errorf("expected header to contain red circle %q when disconnected, got: %q", redCircle, headerDisc)
+	}
+	if strings.Contains(headerDisc, greenCircle) {
+		t.Errorf("header should not contain green circle when disconnected: %q", headerDisc)
+	}
+	if !strings.Contains(headerDisc, "None") {
+		t.Errorf("expected header to show agent name 'None' when disconnected, got: %q", headerDisc)
+	}
+	if strings.Contains(headerDisc, "Connected") {
+		t.Errorf("header should NOT contain 'Connected' text when disconnected: %q", headerDisc)
+	}
+	if strings.Contains(headerDisc, "Focus:") {
+		t.Errorf("header should NOT contain focus indicator: %q", headerDisc)
+	}
+
+	// 3. Auth Failure state
+	mAuthFail := ui.NewModel(ui.Config{
+		Client:     mockClient,
+		InitialErr: fmt.Errorf("%w: invalid bearer token", agent.ErrAuthFailed),
+	})
+	resAuth, _ := mAuthFail.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	modelAuth := resAuth.(ui.Model)
+	headerAuth := modelAuth.RenderHeaderForTest()
+
+	if modelAuth.IsConnected() {
+		t.Errorf("expected IsConnected() to be false on auth failure")
+	}
+	if !modelAuth.AuthFailed() {
+		t.Errorf("expected AuthFailed() to be true on auth failure")
+	}
+	if !strings.Contains(headerAuth, redCircle) {
+		t.Errorf("expected header to contain red circle %q on auth failure, got: %q", redCircle, headerAuth)
+	}
+	if strings.Contains(headerAuth, greenCircle) {
+		t.Errorf("header should not contain green circle on auth failure: %q", headerAuth)
+	}
+	if !strings.Contains(headerAuth, "test-agent") {
+		t.Errorf("expected header to still display agent name on auth failure, got: %q", headerAuth)
+	}
+	if strings.Contains(headerAuth, "Connected") {
+		t.Errorf("header should NOT contain 'Connected' text on auth failure: %q", headerAuth)
+	}
+	if strings.Contains(headerAuth, "Focus:") {
+		t.Errorf("header should NOT contain focus indicator: %q", headerAuth)
+	}
+}
+
 
 
 
