@@ -25,11 +25,13 @@ type Styles struct {
 
 	// Header styles
 	Header            lipgloss.Style
-	HeaderTitle       lipgloss.Style
-	HeaderStatus      lipgloss.Style
-	HeaderStatusError lipgloss.Style
-	HeaderAgent       lipgloss.Style
-	HeaderTask        lipgloss.Style
+	HeaderTitle           lipgloss.Style
+	HeaderStatus          lipgloss.Style
+	HeaderStatusError     lipgloss.Style
+	HeaderConnectedDot    lipgloss.Style
+	HeaderDisconnectedDot lipgloss.Style
+	HeaderAgent           lipgloss.Style
+	HeaderTask            lipgloss.Style
 
 	// Chat message styles
 	UserMessageBox  lipgloss.Style
@@ -64,6 +66,7 @@ type Styles struct {
 	Footer          lipgloss.Style
 	FooterKey       lipgloss.Style
 	FooterDesc      lipgloss.Style
+	FooterStatus    lipgloss.Style
 	ToastBox        lipgloss.Style
 	ScrollBadge     lipgloss.Style
 	ScrollAlert     lipgloss.Style
@@ -108,8 +111,17 @@ func DefaultStyles() Styles {
 			Foreground(accent).
 			Bold(true),
 
+		HeaderConnectedDot: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#10B981")).
+			Bold(true),
+
+		HeaderDisconnectedDot: lipgloss.NewStyle().
+			Foreground(accent).
+			Bold(true),
+
 		HeaderAgent: lipgloss.NewStyle().
-			Foreground(textMuted),
+			Foreground(textBright).
+			Bold(true),
 
 		HeaderTask: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F9E2AF")).
@@ -236,6 +248,10 @@ func DefaultStyles() Styles {
 
 		FooterDesc: lipgloss.NewStyle().
 			Foreground(textMuted),
+
+		FooterStatus: lipgloss.NewStyle().
+			Foreground(secondary).
+			Bold(true),
 
 		ToastBox: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFFFF")).

@@ -34,10 +34,18 @@ func (m Model) View() tea.View {
 	var sections []string
 
 	// 1. Header Bar
-	sections = append(sections, m.renderHeader())
+	headerView := m.renderHeader()
+	sections = append(sections, headerView)
 
 	// 2. Main Chat / Surfaces Viewport
-	sections = append(sections, m.viewport.View())
+	vpView := m.viewport.View()
+	if m.toast != "" {
+		lines := strings.Split(vpView, "\n")
+		if len(lines) > 1 {
+			vpView = strings.Join(lines[:len(lines)-1], "\n")
+		}
+	}
+	sections = append(sections, vpView)
 
 	// 3. Action Toast Bar (if present)
 	if m.toast != "" {
@@ -52,6 +60,19 @@ func (m Model) View() tea.View {
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
+	// Safety guard: ensure total view height never exceeds m.height so the footer is never pushed off-screen
+	if m.height > 0 {
+		lines := strings.Split(content, "\n")
+		if len(lines) > m.height {
+			excess := len(lines) - m.height
+			headerH := lipgloss.Height(headerView)
+			if headerH < len(lines)-excess {
+				lines = append(lines[:headerH], lines[headerH+excess:]...)
+				content = strings.Join(lines, "\n")
+			}
+		}
+	}
+
 	v := tea.NewView(content)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
@@ -61,24 +82,20 @@ func (m Model) View() tea.View {
 func (m *Model) renderHeader() string {
 	title := m.styles.HeaderTitle.Render("github.com/muncus/a2term")
 
-	var statusText string
-	var statusStyled string
-	if m.isLoading || m.isStreaming {
-		statusText = fmt.Sprintf("%s %s", m.spinner.View(), m.status)
-		statusStyled = m.styles.HeaderStatus.Render(statusText)
-	} else if m.status == "Connection Failed" || m.status == "Error" || m.status == "Disconnected" {
-		statusText = fmt.Sprintf("● %s", m.status)
-		statusStyled = m.styles.HeaderStatusError.Render(statusText)
+	var circle string
+	if m.IsConnected() {
+		circle = m.styles.HeaderConnectedDot.Render("●")
 	} else {
-		statusText = fmt.Sprintf("● %s", m.status)
-		statusStyled = m.styles.HeaderStatus.Render(statusText)
+		circle = m.styles.HeaderDisconnectedDot.Render("●")
 	}
 
-	agentName := "Agent: None"
-	if m.client != nil {
-		agentName = fmt.Sprintf("Agent: %s", m.client.AgentName())
+	agentName := "None"
+	if m.client != nil && m.client.AgentName() != "" {
+		agentName = m.client.AgentName()
 	} else if m.agentURL != "" {
-		agentName = fmt.Sprintf("Target: %s", m.agentURL)
+		agentName = m.agentURL
+	} else if m.cardURL != "" {
+		agentName = m.cardURL
 	}
 	agent := m.styles.HeaderAgent.Render(agentName)
 
@@ -92,17 +109,27 @@ func (m *Model) renderHeader() string {
 		}
 	}
 
-	var focusBadge string
-	if m.focusMode == FocusSurface {
-		focusBadge = m.styles.SurfaceFocusedBadge.Render("🎮 Focus: A2UI Surface (Tab/Arrows/Enter)")
-	} else {
-		focusBadge = m.styles.SurfaceBadge.Render("💬 Focus: Chat Input")
+	left := lipgloss.JoinHorizontal(lipgloss.Center, title, "  ", circle, " ", agent)
+	right := sessionBadge
+
+	insideWidth := m.width - 2
+	if insideWidth < 20 {
+		insideWidth = 20
 	}
 
-	left := lipgloss.JoinHorizontal(lipgloss.Center, title, " ", statusStyled, " ", agent)
-	right := lipgloss.JoinHorizontal(lipgloss.Center, sessionBadge, " ", focusBadge)
+	// Adapt header items so they never wrap to a second line
+	if lipgloss.Width(left)+lipgloss.Width(right)+1 > insideWidth {
+		right = ""
+	}
+	if lipgloss.Width(left)+lipgloss.Width(right)+1 > insideWidth {
+		maxAgentLen := insideWidth - lipgloss.Width(title) - 6
+		if maxAgentLen > 3 && len(agentName) > maxAgentLen {
+			agent = m.styles.HeaderAgent.Render(agentName[:maxAgentLen-3] + "...")
+			left = lipgloss.JoinHorizontal(lipgloss.Center, title, "  ", circle, " ", agent)
+		}
+	}
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	gap := insideWidth - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
@@ -120,25 +147,6 @@ func (m *Model) renderInput() string {
 }
 
 func (m *Model) renderFooter() string {
-	keys := []struct {
-		key  string
-		desc string
-	}{
-		{"Tab", "Surface"},
-		{"Enter", "Send"},
-		{"PgUp/Dn", "Scroll"},
-		{"Ctrl+U/D", "HalfPg"},
-		{"/help", "Commands"},
-		{"Ctrl+C", "Quit"},
-	}
-
-	var keyParts []string
-	for _, k := range keys {
-		keyParts = append(keyParts, fmt.Sprintf("%s %s", m.styles.FooterKey.Render(k.key), m.styles.FooterDesc.Render(k.desc)))
-	}
-
-	left := strings.Join(keyParts, "  ")
-
 	var scrollBadge string
 	if m.viewport.AtTop() && m.viewport.AtBottom() {
 		scrollBadge = m.styles.ScrollBadge.Render("📜 All")
@@ -151,7 +159,28 @@ func (m *Model) renderFooter() string {
 		scrollBadge = m.styles.ScrollAlert.Render(fmt.Sprintf("⬇ %d%% • [End: Bottom]", pct))
 	}
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(scrollBadge)
+	insideWidth := m.width - 2
+	if insideWidth < 20 {
+		insideWidth = 20
+	}
+
+	var left string
+	if m.isLoading || m.isStreaming {
+		statusText := fmt.Sprintf("%s %s", m.spinner.View(), m.status)
+		left = m.styles.FooterStatus.Render(statusText)
+	} else if m.status == "Connection Failed" || m.status == "Error" || m.status == "Disconnected" || m.status == "Auth Failed" {
+		statusText := fmt.Sprintf("● %s", m.status)
+		left = m.styles.HeaderStatusError.Render(statusText)
+	} else {
+		// Placeholder on the left where the spinner appears
+		statusText := "Ready"
+		if m.status != "" && m.status != "Thinking..." && m.status != "Streaming..." && m.status != "Sending action..." {
+			statusText = m.status
+		}
+		left = m.styles.FooterDesc.Render(fmt.Sprintf("● %s", statusText))
+	}
+
+	gap := insideWidth - lipgloss.Width(left) - lipgloss.Width(scrollBadge)
 	if gap < 1 {
 		gap = 1
 	}

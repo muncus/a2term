@@ -16,7 +16,10 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -112,14 +115,79 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			actionName := msg.Action.Name
 			srcID := msg.Action.SourceComponentID
 			ctxValues := msg.Action.Context
+
+			surfaceID := msg.Action.SurfaceID
+			if surfaceID == "" && m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) {
+				surfaceID = m.items[m.focusedSurfaceIndex].SurfaceID
+			}
+			if surfaceID == "" {
+				surfaceID = "default"
+			}
+
+			// Validate input against check rules before action dispatch
+			if m.surfaceManager != nil {
+				var inputVal any
+				if ctxValues != nil {
+					inputVal = ctxValues[srcID]
+				}
+				if valErr := m.surfaceManager.ValidateInput(surfaceID, srcID, inputVal); valErr != nil {
+					m.toast = fmt.Sprintf("❌ %s", valErr.Message)
+					m.items = append(m.items, NewErrorItem(uuid.NewString(), fmt.Sprintf("Validation Error (%s): %s", srcID, valErr.Message)))
+					m.updateViewportContent()
+					m.viewport.GotoBottom()
+					return m, m.clearToastAfter(3 * time.Second)
+				}
+			}
+
+			var clientDataModel map[string]any
+			if m.surfaceManager != nil {
+				clientDataModel = m.surfaceManager.ExportClientDataModel(surfaceID)
+			}
+
 			summary := fmt.Sprintf("Action: %s (source: %s, values: %v)", actionName, srcID, ctxValues)
-			return m.handleUIAction(fmt.Sprintf("⚡ %s", summary), m.sendActionCmd(actionName, srcID, ctxValues))
+			return m.handleUIAction(fmt.Sprintf("⚡ %s", summary), m.sendActionCmd(actionName, surfaceID, srcID, ctxValues, clientDataModel))
 		}
 		return m, nil
 
 	case event.ButtonClicked:
-		// a2tea emits a native tmca2ui.ClientMessage alongside ButtonClicked with full form context.
-		// Action dispatch is handled in tmca2ui.ClientMessage to prevent duplicate dispatch.
+		// Client-side actions (such as openUrl function calls) are handled here,
+		// but responses to the model/server use ClientMessage to prevent duplicate dispatch.
+		if m.surfaceManager == nil {
+			return m, nil
+		}
+
+		surfaceID := msg.Source.SurfaceID
+		if surfaceID == "" && m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) {
+			surfaceID = m.items[m.focusedSurfaceIndex].SurfaceID
+		}
+		if surfaceID == "" {
+			surfaceID = "default"
+		}
+
+		st, ok := m.surfaceManager.GetSurface(surfaceID)
+		if !ok {
+			return m, nil
+		}
+
+		comp, ok := st.Components[msg.ID]
+		if !ok || comp.Button == nil || comp.Button.Action.FunctionCall == nil {
+			return m, nil
+		}
+
+		fn := comp.Button.Action.FunctionCall
+		if strings.EqualFold(fn.Call, "openUrl") {
+			rawURL, _ := fn.Args["url"]
+			resolved := a2ui.ResolveValue(rawURL, st.DataStore, nil)
+			targetURL := fmt.Sprintf("%v", resolved)
+			if targetURL != "" && targetURL != "<nil>" {
+				summary := fmt.Sprintf("Opened URL: %s", targetURL)
+				openCmd := func() tea.Msg {
+					_ = openBrowserFunc(targetURL)
+					return nil
+				}
+				return m.handleUIAction(fmt.Sprintf("🔗 %s", summary), openCmd)
+			}
+		}
 		return m, nil
 
 	case event.InputSubmitted:
@@ -143,6 +211,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentResponseMsg:
 		m.isLoading = false
 		m.isStreaming = false
+		m.authFailed = false
 		m.status = "Connected"
 
 		m.appendAgentResponseContent(msg.text)
@@ -158,9 +227,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isStreaming = true
 		m.status = "Streaming..."
 
+		msgs, text := a2ui.ExtractMessagesAndText(msg.chunk)
+		if len(msgs) > 0 {
+			m.processServerMessages(msgs)
+		}
+
 		if msg.isFinal {
 			m.isLoading = false
 			m.isStreaming = false
+			m.authFailed = false
 			m.status = "Connected"
 
 			// Remove temporary streaming item if present
@@ -169,14 +244,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.streamItemID = ""
 			}
 
-			m.appendAgentResponseContent(msg.chunk)
+			if text != "" {
+				m.items = append(m.items, NewAgentTextItem(uuid.NewString(), text))
+			}
 		} else {
 			// Update ongoing streaming text item
-			if m.streamItemID == "" {
-				m.streamItemID = uuid.NewString()
-				m.items = append(m.items, NewAgentTextItem(m.streamItemID, msg.chunk))
-			} else {
-				m.updateFeedItemContent(m.streamItemID, msg.chunk)
+			if text != "" {
+				if m.streamItemID == "" {
+					m.streamItemID = uuid.NewString()
+					m.items = append(m.items, NewAgentTextItem(m.streamItemID, text))
+				} else {
+					m.updateFeedItemContent(m.streamItemID, text)
+				}
 			}
 		}
 
@@ -190,7 +269,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentErrorMsg:
 		m.isLoading = false
 		m.isStreaming = false
-		m.status = "Error"
+		if errors.Is(msg.err, agent.ErrAuthFailed) {
+			m.status = "Auth Failed"
+			m.authFailed = true
+		} else {
+			m.status = "Error"
+		}
 
 		diag := DiagnosticInfo{
 			Title:     "Agent Communication Error",
@@ -212,6 +296,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isLoading = false
 		m.client = msg.client
 		m.status = "Connected"
+		m.authFailed = false
 		m.items = append(m.items, NewSystemItem(uuid.NewString(), fmt.Sprintf("✅ Connected to %s (%s)", msg.agentName, msg.targetURL)))
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
@@ -505,9 +590,13 @@ func (m Model) handleCommand(cmdStr string) (tea.Model, tea.Cmd) {
 		m.items = make([]FeedItem, 0)
 		m.focusedSurfaceIndex = -1
 		m.focusMode = FocusInput
+		m.surfaceFeedMap = make(map[string]string)
 		m.items = append(m.items, NewSystemItem(uuid.NewString(), "Conversation history cleared."))
 
 	case "/reset":
+		m.surfaceFeedMap = make(map[string]string)
+		m.surfaceManager = a2ui.NewSurfaceManager()
+		m.dispatcher = a2ui.NewDispatcher(m.surfaceManager, render.WithStyles(a2ui.DefaultTerminalStyles()))
 		if m.client != nil {
 			m.client.ResetSession()
 			m.items = append(m.items, NewSystemItem(uuid.NewString(), "Session task and context reset."))
@@ -615,7 +704,7 @@ func (m *Model) sendMessageCmd(text string) tea.Cmd {
 	}
 }
 
-func (m *Model) sendActionCmd(actionName, sourceID string, contextValues map[string]any) tea.Cmd {
+func (m *Model) sendActionCmd(actionName, surfaceID, sourceID string, contextValues map[string]any, clientDataModel map[string]any) tea.Cmd {
 	client := m.client
 	target := m.agentURL
 	if target == "" {
@@ -633,12 +722,12 @@ func (m *Model) sendActionCmd(actionName, sourceID string, contextValues map[str
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		resp, err := client.SendActionEvent(ctx, actionName, sourceID, contextValues)
+		resp, err := client.SendA2UIAction(ctx, actionName, surfaceID, sourceID, contextValues, clientDataModel)
 		if err != nil {
 			return agentErrorMsg{
 				err:    err,
 				target: target,
-				phase:  fmt.Sprintf("SendActionEvent (%s)", actionName),
+				phase:  fmt.Sprintf("SendA2UIAction (%s)", actionName),
 			}
 		}
 		return agentResponseMsg{text: resp}
@@ -695,20 +784,69 @@ func (m *Model) appendAgentResponseContent(content string) {
 		return
 	}
 
-	segments, err := a2ui.ParseAgentResponse(content, render.WithStyles(a2ui.DefaultTerminalStyles()))
-	if err != nil || len(segments) == 0 {
+	msgs, prose := a2ui.ExtractMessagesAndText(content)
+	if prose != "" {
+		m.items = append(m.items, NewAgentTextItem(uuid.NewString(), prose))
+	}
+	if len(msgs) > 0 {
+		m.processServerMessages(msgs)
+	} else if prose == "" {
 		m.items = append(m.items, NewAgentTextItem(uuid.NewString(), content))
+	}
+}
+
+func (m *Model) processServerMessages(msgs []tmca2ui.ServerMessage) {
+	if m.dispatcher == nil {
+		return
+	}
+	results, err := m.dispatcher.DispatchBatch(msgs)
+	if err != nil {
+		m.items = append(m.items, NewErrorItem(uuid.NewString(), fmt.Sprintf("A2UI Dispatch Error: %v", err)))
 		return
 	}
 
-	for _, seg := range segments {
-		if seg.Type == a2ui.TypeSurface && seg.Surface != nil {
-			if m.ready {
-				seg.Surface.SetSize(surfaceInnerWidth(m.width), m.viewport.Height())
+	for _, res := range results {
+		switch res.Type {
+		case a2ui.EventSurfaceCreated:
+			// Surface initialized in surface manager
+
+		case a2ui.EventSurfaceUpdated:
+			if res.Model == nil {
+				continue
 			}
-			m.items = append(m.items, NewAgentSurfaceItem(uuid.NewString(), "surface", seg.Surface, seg.Messages))
-		} else if seg.Text != "" {
-			m.items = append(m.items, NewAgentTextItem(uuid.NewString(), seg.Text))
+			if m.ready {
+				res.Model.SetSize(surfaceInnerWidth(m.width), m.viewport.Height())
+			}
+
+			if feedID, ok := m.surfaceFeedMap[res.SurfaceID]; ok {
+				// Update existing surface item in place
+				for i := range m.items {
+					if m.items[i].ID == feedID {
+						m.items[i].Surface = res.Model
+						m.items[i].Messages = append(m.items[i].Messages, res.Message)
+						break
+					}
+				}
+			} else {
+				// Append new surface item
+				itemID := uuid.NewString()
+				item := NewAgentSurfaceItem(itemID, res.SurfaceID, res.Model, []tmca2ui.ServerMessage{res.Message})
+				m.items = append(m.items, item)
+				if m.surfaceFeedMap == nil {
+					m.surfaceFeedMap = make(map[string]string)
+				}
+				m.surfaceFeedMap[res.SurfaceID] = itemID
+			}
+
+		case a2ui.EventSurfaceDeleted:
+			if feedID, ok := m.surfaceFeedMap[res.SurfaceID]; ok {
+				m.removeFeedItem(feedID)
+				delete(m.surfaceFeedMap, res.SurfaceID)
+				if m.focusMode == FocusSurface {
+					m.focusMode = FocusInput
+					m.focusedSurfaceIndex = -1
+				}
+			}
 		}
 	}
 }
@@ -810,6 +948,21 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+var openBrowserFunc = openBrowser
+
+func openBrowser(targetURL string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", targetURL)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", targetURL)
+	default:
+		cmd = exec.Command("xdg-open", targetURL)
+	}
+	return cmd.Start()
 }
 
 
