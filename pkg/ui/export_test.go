@@ -68,3 +68,24 @@ func (m Model) AuthToken() string {
 	return m.authToken
 }
 
+// Items returns the list of feed items for testing.
+func (m Model) Items() []FeedItem {
+	return m.items
+}
+
+// ChatViewportYOffset returns the YOffset of the chat viewport.
+func (m Model) ChatViewportYOffset() int {
+	return m.chatViewport.YOffset()
+}
+
+// SurfacesViewportYOffset returns the YOffset of the surfaces viewport.
+func (m Model) SurfacesViewportYOffset() int {
+	return m.surfacesViewport.YOffset()
+}
+
+// LogsViewportYOffset returns the YOffset of the logs viewport.
+func (m Model) LogsViewportYOffset() int {
+	return m.logsViewport.YOffset()
+}
+
+

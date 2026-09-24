@@ -95,6 +95,24 @@ func TestParsePlainText(t *testing.T) {
 	}
 }
 
+func TestParseBareArray(t *testing.T) {
+	raw := "<a2ui-json>\n" + `[{"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[{"component":"Text","id":"root","text":"Hello"}]}}]` + "\n</a2ui-json>"
+	segments, err := a2ui.ParseAgentResponse(raw)
+	t.Logf("err: %v, segments: %+v", err, segments)
+	if len(segments) > 0 {
+		t.Logf("segment 0 type: %v, text: %q", segments[0].Type, segments[0].Text)
+	}
+}
+
+func TestParseAttachedBareObject(t *testing.T) {
+	raw := `Here is text:{"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[{"component":"Text","id":"root","text":"Hello"}]}}`
+	segments, err := a2ui.ParseAgentResponse(raw)
+	t.Logf("err: %v, segments: %+v", err, segments)
+	if len(segments) > 0 {
+		t.Logf("segment 0 type: %v, text: %q", segments[0].Type, segments[0].Text)
+	}
+}
+
 func TestActionSummary(t *testing.T) {
 	btnEvent := event.ButtonClicked{
 		Source: event.Source{ComponentID: "submitBtn"},

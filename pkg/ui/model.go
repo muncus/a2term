@@ -27,6 +27,15 @@ import (
 	"github.com/muncus/a2term/pkg/agent"
 )
 
+// Tab represents one of the main UI screens.
+type Tab int
+
+const (
+	TabChat Tab = iota
+	TabSurfaces
+	TabLogs
+)
+
 // FocusMode indicates which UI component currently has keyboard focus.
 type FocusMode int
 
@@ -42,10 +51,16 @@ type Model struct {
 	cardURL   string
 	authToken string
 	items     []FeedItem
-	viewport  viewport.Model
-	input     textinput.Model
-	spinner   spinner.Model
-	styles    Styles
+
+	activeTab        Tab
+	chatViewport     viewport.Model
+	surfacesViewport viewport.Model
+	logsViewport     viewport.Model
+	viewport         viewport.Model // mirror of currently active tab's viewport
+
+	input   textinput.Model
+	spinner spinner.Model
+	styles  Styles
 
 	width int
 	height int
@@ -87,10 +102,20 @@ func NewModel(cfg Config) Model {
 	tiStyles.Focused.Prompt = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00D7AF"))
 	ti.SetStyles(tiStyles)
 
-	vp := viewport.New()
-	vp.MouseWheelEnabled = true
-	vp.MouseWheelDelta = 3
-	vp.SoftWrap = true
+	chatVP := viewport.New()
+	chatVP.MouseWheelEnabled = true
+	chatVP.MouseWheelDelta = 3
+	chatVP.SoftWrap = true
+
+	surfacesVP := viewport.New()
+	surfacesVP.MouseWheelEnabled = true
+	surfacesVP.MouseWheelDelta = 3
+	surfacesVP.SoftWrap = true
+
+	logsVP := viewport.New()
+	logsVP.MouseWheelEnabled = true
+	logsVP.MouseWheelDelta = 3
+	logsVP.SoftWrap = true
 
 	styles := DefaultStyles()
 
@@ -114,7 +139,11 @@ func NewModel(cfg Config) Model {
 		cardURL:             cfg.CardURL,
 		authToken:           cfg.AuthToken,
 		items:               make([]FeedItem, 0),
-		viewport:            vp,
+		activeTab:           TabChat,
+		chatViewport:        chatVP,
+		surfacesViewport:    surfacesVP,
+		logsViewport:        logsVP,
+		viewport:            chatVP,
 		input:               ti,
 		spinner:             s,
 		styles:              styles,
@@ -263,5 +292,93 @@ func surfaceInnerWidth(totalWidth int) int {
 	}
 	return w
 }
+
+// ActiveTab returns the current active tab.
+func (m Model) ActiveTab() Tab {
+	return m.activeTab
+}
+
+// activeViewport returns a pointer to the viewport for the active tab.
+func (m *Model) activeViewport() *viewport.Model {
+	switch m.activeTab {
+	case TabSurfaces:
+		return &m.surfacesViewport
+	case TabLogs:
+		return &m.logsViewport
+	default:
+		return &m.chatViewport
+	}
+}
+
+// syncActiveViewportMirror updates m.viewport to match the active tab's viewport.
+func (m *Model) syncActiveViewportMirror() {
+	m.viewport = *m.activeViewport()
+}
+
+// syncCurrentFromActiveViewport copies the active tab's viewport into m.viewport.
+func (m *Model) syncCurrentFromActiveViewport() {
+	m.viewport = *m.activeViewport()
+}
+
+// syncActiveViewportFromCurrent copies m.viewport into the active tab's viewport.
+func (m *Model) syncActiveViewportFromCurrent() {
+	switch m.activeTab {
+	case TabSurfaces:
+		m.surfacesViewport = m.viewport
+	case TabLogs:
+		m.logsViewport = m.viewport
+	default:
+		m.chatViewport = m.viewport
+	}
+}
+
+// SetActiveTab switches the active tab and manages focus and viewports.
+func (m *Model) SetActiveTab(tab Tab) tea.Cmd {
+	if tab < TabChat || tab > TabLogs {
+		return nil
+	}
+	m.syncActiveViewportFromCurrent()
+	m.activeTab = tab
+	m.syncCurrentFromActiveViewport()
+
+	var cmds []tea.Cmd
+	switch tab {
+	case TabChat:
+		cmds = append(cmds, m.ReturnFocusToInput())
+	case TabSurfaces:
+		m.input.Blur()
+		surfaces := m.FindSurfaceIndices()
+		if len(surfaces) > 0 {
+			if m.focusedSurfaceIndex < 0 {
+				m.focusedSurfaceIndex = surfaces[len(surfaces)-1]
+			}
+			cmd := m.setFocusedSurface(m.focusedSurfaceIndex)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	case TabLogs:
+		m.input.Blur()
+		if m.focusedSurfaceIndex >= 0 && m.focusedSurfaceIndex < len(m.items) && m.items[m.focusedSurfaceIndex].Surface != nil {
+			m.items[m.focusedSurfaceIndex].Surface.Blur()
+		}
+	}
+
+	m.updateViewportContent()
+	return tea.Batch(cmds...)
+}
+
+// NextTab cycles to the next tab.
+func (m *Model) NextTab() tea.Cmd {
+	next := (m.activeTab + 1) % 3
+	return m.SetActiveTab(next)
+}
+
+// PrevTab cycles to the previous tab.
+func (m *Model) PrevTab() tea.Cmd {
+	prev := (m.activeTab + 2) % 3
+	return m.SetActiveTab(prev)
+}
+
 
 

@@ -36,10 +36,11 @@ const (
 
 // ParsedSegment is a unit of an agent response: either prose text or a rendered A2UI surface model.
 type ParsedSegment struct {
-	Type     ContentType
-	Text     string
-	Messages []tmca2ui.ServerMessage
-	Surface  render.Model
+	Type      ContentType
+	Text      string
+	SurfaceID string
+	Messages  []tmca2ui.ServerMessage
+	Surface   render.Model
 }
 
 // ParseAgentResponse parses an agent response string, extracting text segments and rendering any A2UI components.
@@ -84,10 +85,22 @@ func ParseAgentResponse(content string, customStyles ...render.Option) ([]Parsed
 				if rModel, ok := surfaceModel.(render.Model); ok {
 					rm = rModel
 				}
+				surfID := ""
+				for _, msg := range part.Messages {
+					if msg.CreateSurface != nil && msg.CreateSurface.SurfaceID != "" {
+						surfID = msg.CreateSurface.SurfaceID
+						break
+					}
+					if msg.UpdateComponents != nil && msg.UpdateComponents.SurfaceID != "" {
+						surfID = msg.UpdateComponents.SurfaceID
+						break
+					}
+				}
 				segments = append(segments, ParsedSegment{
-					Type:     TypeSurface,
-					Messages: part.Messages,
-					Surface:  rm,
+					Type:      TypeSurface,
+					SurfaceID: surfID,
+					Messages:  part.Messages,
+					Surface:   rm,
 				})
 			}
 		}

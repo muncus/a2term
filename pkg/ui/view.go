@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -36,18 +37,23 @@ func (m Model) View() tea.View {
 	// 1. Header Bar
 	sections = append(sections, m.renderHeader())
 
-	// 2. Main Chat / Surfaces Viewport
-	sections = append(sections, m.viewport.View())
+	// 2. Tab Bar
+	sections = append(sections, m.renderTabBar())
 
-	// 3. Action Toast Bar (if present)
+	// 3. Active Tab Viewport
+	sections = append(sections, m.activeViewport().View())
+
+	// 4. Action Toast Bar (if present)
 	if m.toast != "" {
 		sections = append(sections, m.styles.ToastBox.Render(m.toast))
 	}
 
-	// 4. Input Prompt Box
-	sections = append(sections, m.renderInput())
+	// 5. Input Prompt Box (only visible on Chat tab)
+	if m.activeTab == TabChat {
+		sections = append(sections, m.renderInput())
+	}
 
-	// 5. Footer Shortcuts Bar
+	// 6. Footer Shortcuts Bar
 	sections = append(sections, m.renderFooter())
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -92,15 +98,8 @@ func (m *Model) renderHeader() string {
 		}
 	}
 
-	var focusBadge string
-	if m.focusMode == FocusSurface {
-		focusBadge = m.styles.SurfaceFocusedBadge.Render("🎮 Focus: A2UI Surface (Tab/Arrows/Enter)")
-	} else {
-		focusBadge = m.styles.SurfaceBadge.Render("💬 Focus: Chat Input")
-	}
-
 	left := lipgloss.JoinHorizontal(lipgloss.Center, title, " ", statusStyled, " ", agent)
-	right := lipgloss.JoinHorizontal(lipgloss.Center, sessionBadge, " ", focusBadge)
+	right := sessionBadge
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -109,6 +108,79 @@ func (m *Model) renderHeader() string {
 	space := strings.Repeat(" ", gap)
 
 	return m.styles.Header.Width(m.width).Render(left + space + right)
+}
+
+func (m *Model) renderTabBar() string {
+	// Tab 1: Chat
+	t1Label := " 1 Chat "
+	var t1 string
+	if m.activeTab == TabChat {
+		t1 = m.styles.TabActive.Render(t1Label)
+	} else {
+		t1 = m.styles.TabInactive.Render(t1Label)
+	}
+
+	// Tab 2: Surfaces
+	surfCount := len(m.FindSurfaceIndices())
+	var t2Label string
+	if surfCount > 0 {
+		t2Label = fmt.Sprintf(" 2 Surfaces (%d) ", surfCount)
+	} else {
+		t2Label = " 2 Surfaces "
+	}
+	var t2 string
+	if m.activeTab == TabSurfaces {
+		t2 = m.styles.TabActive.Render(t2Label)
+	} else {
+		t2 = m.styles.TabInactive.Render(t2Label)
+	}
+
+	// Tab 3: Logs
+	t3Label := " 3 Logs "
+	var t3 string
+	if m.activeTab == TabLogs {
+		t3 = m.styles.TabActive.Render(t3Label)
+	} else {
+		t3 = m.styles.TabInactive.Render(t3Label)
+	}
+
+	bar := lipgloss.JoinHorizontal(lipgloss.Top, "  ", t1, "  ", t2, "  ", t3)
+	divider := lipgloss.NewStyle().Foreground(lipgloss.Color("#45475A")).Render(strings.Repeat("─", m.width))
+	return m.styles.TabBar.Width(m.width).Render(bar) + "\n" + divider
+}
+
+// tabAtX determines which Tab was clicked given an X coordinate on the tab bar row.
+func (m *Model) tabAtX(x int) (Tab, bool) {
+	curX := 2
+
+	// Tab 1: Chat
+	w1 := lipgloss.Width(" 1 Chat ")
+	if x >= curX && x < curX+w1 {
+		return TabChat, true
+	}
+	curX += w1 + 2
+
+	// Tab 2: Surfaces
+	surfCount := len(m.FindSurfaceIndices())
+	var t2Label string
+	if surfCount > 0 {
+		t2Label = fmt.Sprintf(" 2 Surfaces (%d) ", surfCount)
+	} else {
+		t2Label = " 2 Surfaces "
+	}
+	w2 := lipgloss.Width(t2Label)
+	if x >= curX && x < curX+w2 {
+		return TabSurfaces, true
+	}
+	curX += w2 + 2
+
+	// Tab 3: Logs
+	w3 := lipgloss.Width(" 3 Logs ")
+	if x >= curX && x < curX+w3 {
+		return TabLogs, true
+	}
+
+	return TabChat, false
 }
 
 func (m *Model) renderInput() string {
@@ -120,16 +192,48 @@ func (m *Model) renderInput() string {
 }
 
 func (m *Model) renderFooter() string {
-	keys := []struct {
+	var keys []struct {
 		key  string
 		desc string
-	}{
-		{"Tab", "Surface"},
-		{"Enter", "Send"},
-		{"PgUp/Dn", "Scroll"},
-		{"Ctrl+U/D", "HalfPg"},
-		{"/help", "Commands"},
-		{"Ctrl+C", "Quit"},
+	}
+
+	switch m.activeTab {
+	case TabChat:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"F1-F3", "Tabs"},
+			{"Shift+←/→", "Cycle"},
+			{"Enter", "Send"},
+			{"PgUp/Dn", "Scroll"},
+			{"/help", "Commands"},
+			{"Ctrl+C", "Quit"},
+		}
+	case TabSurfaces:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"F1-F3", "Tabs"},
+			{"Shift+←/→", "Cycle"},
+			{"Tab", "Control"},
+			{"Enter", "Activate"},
+			{"Esc", "Chat"},
+			{"Ctrl+C", "Quit"},
+		}
+	case TabLogs:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"F1-F3", "Tabs"},
+			{"Shift+←/→", "Cycle"},
+			{"PgUp/Dn", "Scroll"},
+			{"Ctrl+Home/End", "Jump"},
+			{"Esc", "Chat"},
+			{"Ctrl+C", "Quit"},
+		}
 	}
 
 	var keyParts []string
@@ -139,15 +243,16 @@ func (m *Model) renderFooter() string {
 
 	left := strings.Join(keyParts, "  ")
 
+	activeVP := m.activeViewport()
 	var scrollBadge string
-	if m.viewport.AtTop() && m.viewport.AtBottom() {
+	if activeVP.AtTop() && activeVP.AtBottom() {
 		scrollBadge = m.styles.ScrollBadge.Render("📜 All")
-	} else if m.viewport.AtBottom() {
+	} else if activeVP.AtBottom() {
 		scrollBadge = m.styles.ScrollBadge.Render("📜 Bottom")
-	} else if m.viewport.AtTop() {
+	} else if activeVP.AtTop() {
 		scrollBadge = m.styles.ScrollAlert.Render("⬆ Top (0%) • [End: Bottom]")
 	} else {
-		pct := int(m.viewport.ScrollPercent() * 100)
+		pct := int(activeVP.ScrollPercent() * 100)
 		scrollBadge = m.styles.ScrollAlert.Render(fmt.Sprintf("⬇ %d%% • [End: Bottom]", pct))
 	}
 
@@ -161,56 +266,21 @@ func (m *Model) renderFooter() string {
 }
 
 func (m *Model) updateViewportContent() {
-	var sb strings.Builder
-	currentLine := 0
-	targetStart := -1
-	targetEnd := -1
-	targetElemStart := -1
-	targetElemEnd := -1
-
-	for i, item := range m.items {
-		itemStr := m.renderFeedItem(i, item)
-
-		if item.Kind == KindAgentSurface && m.focusMode == FocusSurface && m.focusedSurfaceIndex == i {
-			boxLines := strings.Split(strings.TrimSuffix(itemStr, "\n"), "\n")
-			targetStart = currentLine
-			targetEnd = currentLine + len(boxLines) - 1
-
-			for lineIdx, line := range boxLines {
-				if strings.Contains(line, "ACTIVE FOCUS") {
-					continue
-				}
-				if strings.Contains(line, "▎") ||
-					strings.Contains(line, "48;2;56;189;248") ||
-					strings.Contains(line, "\x1b[7m") ||
-					strings.Contains(line, "[7m") ||
-					strings.Contains(line, ";7m") {
-					absLine := currentLine + lineIdx
-					if targetElemStart == -1 {
-						targetElemStart = absLine
-					}
-					targetElemEnd = absLine
-				}
-			}
-		}
-
-		sb.WriteString(itemStr)
-		currentLine += strings.Count(itemStr, "\n")
-	}
-
-	m.viewport.SetContent(sb.String())
-
-	if m.focusMode == FocusSurface {
-		if targetElemStart != -1 {
-			m.ensureLineRangeVisible(targetElemStart, targetElemEnd)
-		} else if targetStart != -1 {
-			m.ensureLineRangeVisible(targetStart, targetEnd)
-		}
-	}
+	m.updateChatViewportContent()
+	m.updateSurfacesViewportContent()
+	m.updateLogsViewportContent()
+	m.syncActiveViewportMirror()
 }
 
-// renderFeedItem formats and styles a single FeedItem according to its Kind and focus state.
-func (m *Model) renderFeedItem(idx int, item FeedItem) string {
+func (m *Model) updateChatViewportContent() {
+	var sb strings.Builder
+	for i, item := range m.items {
+		sb.WriteString(m.renderChatFeedItem(i, item))
+	}
+	m.chatViewport.SetContent(sb.String())
+}
+
+func (m *Model) renderChatFeedItem(idx int, item FeedItem) string {
 	switch item.Kind {
 	case KindUser:
 		role := m.styles.UserRole.Render(fmt.Sprintf("👤 You (%s)", item.Timestamp.Format("15:04")))
@@ -225,36 +295,17 @@ func (m *Model) renderFeedItem(idx int, item FeedItem) string {
 		return m.styles.AgentMessageBox.Width(m.width - 4).Render(msg) + "\n"
 
 	case KindAgentSurface:
-		isFocused := (m.focusMode == FocusSurface && m.focusedSurfaceIndex == idx)
-		var badge string
-		if isFocused {
-			badge = m.styles.SurfaceFocusedBadge.Render("🎮 A2UI SURFACE [ACTIVE FOCUS - Tab moves focus, Enter activates]")
-		} else {
-			badge = m.styles.SurfaceBadge.Render("📦 A2UI SURFACE [Press Tab to interact]")
+		surfID := item.SurfaceID
+		if surfID == "" {
+			surfID = "A2UI Component"
 		}
-
-		surfaceContent := ""
-		if item.Surface != nil {
-			surfaceContent = item.Surface.View().Content
-		}
-		combined := fmt.Sprintf("%s\n\n%s", badge, surfaceContent)
-
-		var containerText string
-		if isFocused {
-			containerText = m.styles.SurfaceFocusedContainer.Width(m.width - 4).Render(combined)
-		} else {
-			containerText = m.styles.SurfaceContainer.Width(m.width - 4).Render(combined)
-		}
-		return containerText + "\n"
+		badge := m.styles.SurfaceBadge.Render("📦 A2UI Surface: " + surfID)
+		hint := m.styles.FooterDesc.Render("Switch to [2 Surfaces] tab (Press F2 or click Surfaces) to view and interact.")
+		cardNotice := m.styles.SurfaceNoticeBox.Width(m.width - 6).Render(fmt.Sprintf("%s\n%s", badge, hint))
+		return cardNotice + "\n"
 
 	case KindSystem:
 		return m.styles.SystemMessage.Render("ℹ️ " + item.Content) + "\n\n"
-
-	case KindAction:
-		return m.styles.ActionMessage.Render(item.Content) + "\n"
-
-	case KindError:
-		return m.styles.ErrorMessage.Render("❌ " + item.Content) + "\n"
 
 	case KindDiagnostic:
 		if item.Diagnostic != nil {
@@ -285,31 +336,174 @@ func (m *Model) renderFeedItem(idx int, item FeedItem) string {
 		}
 		return ""
 
+	case KindError:
+		return m.styles.ErrorMessage.Render("❌ " + item.Content) + "\n"
+
 	default:
-		return item.Content + "\n"
+		return ""
 	}
 }
 
-// ensureLineRangeVisible ensures the given vertical line range [startLine, endLine]
-// within viewport content is visible on screen, scrolling the viewport only when necessary.
-func (m *Model) ensureLineRangeVisible(startLine, endLine int) {
-	if !m.ready || m.viewport.Height() <= 0 {
+func (m *Model) updateSurfacesViewportContent() {
+	surfaces := m.FindSurfaceIndices()
+	if len(surfaces) == 0 {
+		emptyBox := m.styles.SurfaceEmptyState.Width(m.width - 6).Render(
+			"📦 No A2UI Surfaces Active\n\n" +
+				"Interactive forms, cards, and components generated by the agent will appear here.\n\n" +
+				"Type a message in the [1 Chat] tab to interact with the agent.")
+		m.surfacesViewport.SetContent(emptyBox)
 		return
 	}
 
-	vpHeight := m.viewport.Height()
-	currOffset := m.viewport.YOffset()
-	totalLines := m.viewport.TotalLineCount()
+	var sb strings.Builder
+	currentLine := 0
+	targetStart := -1
+	targetEnd := -1
+	targetElemStart := -1
+	targetElemEnd := -1
+
+	for _, idx := range surfaces {
+		item := m.items[idx]
+		itemStr := m.renderSurfaceFeedItem(idx, item)
+
+		if m.focusMode == FocusSurface && m.focusedSurfaceIndex == idx {
+			boxLines := strings.Split(strings.TrimSuffix(itemStr, "\n"), "\n")
+			targetStart = currentLine
+			targetEnd = currentLine + len(boxLines) - 1
+
+			for lineIdx, line := range boxLines {
+				if strings.Contains(line, "ACTIVE FOCUS") {
+					continue
+				}
+				if strings.Contains(line, "▎") ||
+					strings.Contains(line, "48;2;56;189;248") ||
+					strings.Contains(line, "\x1b[7m") ||
+					strings.Contains(line, "[7m") ||
+					strings.Contains(line, ";7m") {
+					absLine := currentLine + lineIdx
+					if targetElemStart == -1 {
+						targetElemStart = absLine
+					}
+					targetElemEnd = absLine
+				}
+			}
+		}
+
+		sb.WriteString(itemStr)
+		currentLine += strings.Count(itemStr, "\n")
+	}
+
+	m.surfacesViewport.SetContent(sb.String())
+
+	if m.focusMode == FocusSurface {
+		if targetElemStart != -1 {
+			m.ensureLineRangeVisibleInViewport(&m.surfacesViewport, targetElemStart, targetElemEnd)
+		} else if targetStart != -1 {
+			m.ensureLineRangeVisibleInViewport(&m.surfacesViewport, targetStart, targetEnd)
+		}
+	}
+}
+
+func (m *Model) renderSurfaceFeedItem(idx int, item FeedItem) string {
+	isFocused := (m.focusMode == FocusSurface && m.focusedSurfaceIndex == idx)
+
+	surfID := item.SurfaceID
+	if surfID == "" {
+		surfID = fmt.Sprintf("Surface #%d", idx+1)
+	}
+
+	var badge string
+	if isFocused {
+		badge = m.styles.SurfaceFocusedBadge.Render(fmt.Sprintf("🎮 %s [ACTIVE FOCUS - Tab/Arrows to navigate, Enter to activate]", surfID))
+	} else {
+		badge = m.styles.SurfaceBadge.Render(fmt.Sprintf("📦 %s [Click or press Tab to focus]", surfID))
+	}
+
+	surfaceContent := ""
+	if item.Surface != nil {
+		surfaceContent = item.Surface.View().Content
+	}
+	combined := fmt.Sprintf("%s\n\n%s", badge, surfaceContent)
+
+	var containerText string
+	if isFocused {
+		containerText = m.styles.SurfaceFocusedContainer.Width(m.width - 4).Render(combined)
+	} else {
+		containerText = m.styles.SurfaceContainer.Width(m.width - 4).Render(combined)
+	}
+	return containerText + "\n"
+}
+
+func (m *Model) updateLogsViewportContent() {
+	var sb strings.Builder
+
+	for _, item := range m.items {
+		timestamp := m.styles.LogTimestamp.Render(item.Timestamp.Format("15:04:05"))
+
+		switch item.Kind {
+		case KindSystem:
+			prefix := m.styles.LogPrefix.Foreground(lipgloss.Color("#00D7AF")).Render("[SYSTEM]")
+			sb.WriteString(fmt.Sprintf("%s %s %s\n", timestamp, prefix, item.Content))
+
+		case KindAction:
+			prefix := m.styles.LogPrefix.Foreground(lipgloss.Color("#F9E2AF")).Render("[ACTION]")
+			sb.WriteString(fmt.Sprintf("%s %s %s\n", timestamp, prefix, item.Content))
+
+		case KindError:
+			prefix := m.styles.LogPrefix.Foreground(lipgloss.Color("#F43F5E")).Render("[ERROR]")
+			sb.WriteString(fmt.Sprintf("%s %s %s\n", timestamp, prefix, item.Content))
+
+		case KindDiagnostic:
+			if item.Diagnostic != nil {
+				d := item.Diagnostic
+				var diagLines []string
+				diagLines = append(diagLines, m.styles.DiagnosticTitle.Render(fmt.Sprintf("⚠️ DIAGNOSTIC: %s", d.Title)))
+				if d.TargetURL != "" {
+					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Target URL:"), m.styles.DiagnosticValue.Render(d.TargetURL)))
+				}
+				if d.Phase != "" {
+					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Phase:"), m.styles.DiagnosticValue.Render(d.Phase)))
+				}
+				if d.ErrorMsg != "" {
+					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Error:"), m.styles.DiagnosticValue.Render(d.ErrorMsg)))
+				}
+				if d.Details != "" {
+					diagLines = append(diagLines, fmt.Sprintf("%s %s", m.styles.DiagnosticLabel.Render("Details:"), m.styles.DiagnosticValue.Render(d.Details)))
+				}
+				if len(d.Tips) > 0 {
+					diagLines = append(diagLines, "")
+					diagLines = append(diagLines, m.styles.DiagnosticLabel.Render("Troubleshooting Tips:"))
+					for _, tip := range d.Tips {
+						diagLines = append(diagLines, m.styles.DiagnosticTip.Render("  • "+tip))
+					}
+				}
+				content := strings.Join(diagLines, "\n")
+				sb.WriteString(m.styles.DiagnosticBox.Width(m.width - 4).Render(content) + "\n")
+			}
+		}
+	}
+
+	m.logsViewport.SetContent(sb.String())
+}
+
+// ensureLineRangeVisibleInViewport ensures the given line range is visible in the specified viewport.
+func (m *Model) ensureLineRangeVisibleInViewport(vp *viewport.Model, startLine, endLine int) {
+	if !m.ready || vp.Height() <= 0 {
+		return
+	}
+
+	vpHeight := vp.Height()
+	currOffset := vp.YOffset()
+	totalLines := vp.TotalLineCount()
 	maxOffset := totalLines - vpHeight
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
 
-	// 1. If startLine is above current view, scroll UP so startLine is visible
 	if startLine < currOffset {
 		newOffset := startLine
 		if newOffset > 0 {
-			newOffset-- // 1 line of context margin above
+			newOffset--
 		}
 		if newOffset > maxOffset {
 			newOffset = maxOffset
@@ -317,19 +511,16 @@ func (m *Model) ensureLineRangeVisible(startLine, endLine int) {
 		if newOffset < 0 {
 			newOffset = 0
 		}
-		m.viewport.SetYOffset(newOffset)
+		vp.SetYOffset(newOffset)
 		return
 	}
 
-	// 2. If endLine is below current view, scroll DOWN so endLine is visible
 	if endLine >= currOffset+vpHeight {
 		elemHeight := endLine - startLine + 1
 		var newOffset int
 		if elemHeight <= vpHeight {
-			// If element fits on screen, position it near bottom with 1 line margin below
 			newOffset = endLine - vpHeight + 2
 		} else {
-			// If element is taller than viewport, align top of element to top of viewport
 			newOffset = startLine
 		}
 		if newOffset > maxOffset {
@@ -338,25 +529,51 @@ func (m *Model) ensureLineRangeVisible(startLine, endLine int) {
 		if newOffset < 0 {
 			newOffset = 0
 		}
-		m.viewport.SetYOffset(newOffset)
+		vp.SetYOffset(newOffset)
 		return
 	}
+}
 
-	// 3. Otherwise, already visible on screen!
+// ensureLineRangeVisible ensures the given vertical line range [startLine, endLine]
+// within the active viewport content is visible on screen.
+func (m *Model) ensureLineRangeVisible(startLine, endLine int) {
+	m.ensureLineRangeVisibleInViewport(m.activeViewport(), startLine, endLine)
+}
+
+// findSurfaceAtContentLine returns the index in m.items of the surface rendered at targetLine in the surfaces viewport.
+func (m *Model) findSurfaceAtContentLine(targetLine int) int {
+	if targetLine < 0 {
+		return -1
+	}
+	surfaces := m.FindSurfaceIndices()
+	currentLine := 0
+	for _, idx := range surfaces {
+		item := m.items[idx]
+		itemStr := m.renderSurfaceFeedItem(idx, item)
+		lines := strings.Count(itemStr, "\n")
+		if targetLine >= currentLine && targetLine < currentLine+lines {
+			return idx
+		}
+		currentLine += lines
+	}
+	return -1
 }
 
 // findItemAtContentLine returns the index of the FeedItem that renders on the given
-// 0-indexed line of the viewport content, or -1 if line is out of range.
+// 0-indexed line of the active tab's viewport content, or -1 if line is out of range.
 func (m *Model) findItemAtContentLine(targetLine int) int {
+	if m.activeTab == TabSurfaces {
+		return m.findSurfaceAtContentLine(targetLine)
+	}
 	if targetLine < 0 {
 		return -1
 	}
 
 	currentLine := 0
 	for i, item := range m.items {
-		itemStr := m.renderFeedItem(i, item)
+		itemStr := m.renderChatFeedItem(i, item)
 		lineCount := strings.Count(itemStr, "\n")
-		if targetLine >= currentLine && targetLine < currentLine+lineCount {
+		if lineCount > 0 && targetLine >= currentLine && targetLine < currentLine+lineCount {
 			return i
 		}
 		currentLine += lineCount

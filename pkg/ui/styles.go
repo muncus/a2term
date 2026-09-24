@@ -60,6 +60,18 @@ type Styles struct {
 	InputFocusedContainer lipgloss.Style
 	InputPrompt           lipgloss.Style
 
+	// Tab bar styles
+	TabBar            lipgloss.Style
+	TabActive         lipgloss.Style
+	TabInactive       lipgloss.Style
+	TabKey            lipgloss.Style
+	TabBadge          lipgloss.Style
+	TabBadgeAlert     lipgloss.Style
+	SurfaceEmptyState lipgloss.Style
+	SurfaceNoticeBox  lipgloss.Style
+	LogTimestamp      lipgloss.Style
+	LogPrefix         lipgloss.Style
+
 	// Footer and toast
 	Footer          lipgloss.Style
 	FooterKey       lipgloss.Style
@@ -256,5 +268,54 @@ func DefaultStyles() Styles {
 		ScrollIndicator: lipgloss.NewStyle().
 			Foreground(secondary).
 			Bold(true),
+
+		TabBar: lipgloss.NewStyle().
+			Background(bgDark).
+			Padding(0, 1),
+
+		TabActive: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(primary).
+			Padding(0, 1),
+
+		TabInactive: lipgloss.NewStyle().
+			Foreground(textMuted).
+			Background(userBubbleBg).
+			Padding(0, 1),
+
+		TabKey: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#F9E2AF")),
+
+		TabBadge: lipgloss.NewStyle().
+			Foreground(secondary).
+			Bold(true),
+
+		TabBadgeAlert: lipgloss.NewStyle().
+			Foreground(accent).
+			Bold(true),
+
+		SurfaceEmptyState: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(borderNormal).
+			Padding(1, 2).
+			MarginTop(1).
+			MarginBottom(1),
+
+		SurfaceNoticeBox: lipgloss.NewStyle().
+			Background(agentBubbleBg).
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(secondary).
+			Padding(0, 1).
+			MarginTop(1).
+			MarginBottom(1),
+
+		LogTimestamp: lipgloss.NewStyle().
+			Foreground(textMuted),
+
+		LogPrefix: lipgloss.NewStyle().
+			Bold(true).
+			Padding(0, 1),
 	}
 }

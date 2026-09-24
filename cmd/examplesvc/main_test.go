@@ -134,3 +134,38 @@ func TestExampleServiceEndToEndJSONRPC(t *testing.T) {
 		t.Errorf("expected showcase response, got: %q", showcaseResp)
 	}
 }
+
+func TestMultipartResponse(t *testing.T) {
+	msg := multipartMessage()
+	if msg == nil {
+		t.Fatal("expected non-nil multipart message")
+	}
+	if len(msg.Parts) != 2 {
+		t.Fatalf("expected 2 parts in multipart response, got %d", len(msg.Parts))
+	}
+
+	// Part 0: Text part
+	textPart := msg.Parts[0]
+	if textPart.Text() == "" {
+		t.Error("expected non-empty text part")
+	}
+
+	// Part 1: A2UI DataPart with application/a2ui+json
+	uiPart := msg.Parts[1]
+	if uiPart.MediaType != A2UIMIMEType {
+		t.Errorf("expected MediaType %q, got %q", A2UIMIMEType, uiPart.MediaType)
+	}
+	if mime, ok := uiPart.Metadata["mimeType"].(string); !ok || mime != A2UIMIMEType {
+		t.Errorf("expected metadata mimeType %q, got %v", A2UIMIMEType, uiPart.Metadata["mimeType"])
+	}
+	if uiPart.Data() == nil {
+		t.Fatal("expected non-nil Data in uiPart")
+	}
+
+	// Verify also via multipartCard alias
+	cardMsg := multipartCard()
+	if cardMsg == nil || len(cardMsg.Parts) != 2 {
+		t.Errorf("expected multipartCard to return valid 2-part message")
+	}
+}
+

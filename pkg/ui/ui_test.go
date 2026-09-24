@@ -739,15 +739,18 @@ func TestModelMouseClickBetweenMultipleSurfaces(t *testing.T) {
 	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surface1))
 	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surface2))
 
-	// Click on second surface (lower down in viewport, Y=20, index 3)
-	updated, _ = updated.Update(tea.MouseClickMsg{X: 10, Y: 20, Button: tea.MouseLeft})
+	// Switch to TabSurfaces so full surfaces are rendered
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF2})
+
+	// Click on second surface (lower down in surfaces viewport, Y=16, index 3)
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 10, Y: 16, Button: tea.MouseLeft})
 	model := updated.(ui.Model)
 	if model.FocusMode() != ui.FocusSurface || model.FocusedSurfaceIndex() != 3 {
 		t.Errorf("expected surface index 3 focused, got mode=%v idx=%d", model.FocusMode(), model.FocusedSurfaceIndex())
 	}
 
-	// Click on first surface (higher up in viewport, Y=10, index 2)
-	updated, _ = updated.Update(tea.MouseClickMsg{X: 10, Y: 10, Button: tea.MouseLeft})
+	// Click on first surface (higher up in surfaces viewport, Y=6, index 2)
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 10, Y: 6, Button: tea.MouseLeft})
 	model = updated.(ui.Model)
 	if model.FocusMode() != ui.FocusSurface || model.FocusedSurfaceIndex() != 2 {
 		t.Errorf("expected surface index 2 focused, got mode=%v idx=%d", model.FocusMode(), model.FocusedSurfaceIndex())
@@ -785,6 +788,270 @@ func TestModelAuthCommand(t *testing.T) {
 	model = updated.(ui.Model)
 	if model.AuthToken() != "" {
 		t.Errorf("expected AuthToken to be cleared, got %q", model.AuthToken())
+	}
+}
+
+func TestTabSwitchingKeybindings(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	model := updated.(ui.Model)
+	if model.ActiveTab() != ui.TabChat {
+		t.Fatalf("expected initial tab to be TabChat, got %v", model.ActiveTab())
+	}
+
+	// F2 switches to TabSurfaces
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF2})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabSurfaces {
+		t.Errorf("expected TabSurfaces after F2, got %v", model.ActiveTab())
+	}
+
+	// F3 switches to TabLogs
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF3})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabLogs {
+		t.Errorf("expected TabLogs after F3, got %v", model.ActiveTab())
+	}
+
+	// F1 switches to TabChat
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabChat {
+		t.Errorf("expected TabChat after F1, got %v", model.ActiveTab())
+	}
+
+	// Alt+2 switches to TabSurfaces
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: '2', Mod: tea.ModAlt})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabSurfaces {
+		t.Errorf("expected TabSurfaces after Alt+2, got %v", model.ActiveTab())
+	}
+
+	// Alt+3 switches to TabLogs
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: '3', Mod: tea.ModAlt})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabLogs {
+		t.Errorf("expected TabLogs after Alt+3, got %v", model.ActiveTab())
+	}
+
+	// Alt+1 switches to TabChat
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: '1', Mod: tea.ModAlt})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabChat {
+		t.Errorf("expected TabChat after Alt+1, got %v", model.ActiveTab())
+	}
+
+	// Shift+Right cycles forward: Chat -> Surfaces -> Logs -> Chat
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabSurfaces {
+		t.Errorf("expected TabSurfaces after Shift+Right, got %v", model.ActiveTab())
+	}
+
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabLogs {
+		t.Errorf("expected TabLogs after Shift+Right, got %v", model.ActiveTab())
+	}
+
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabChat {
+		t.Errorf("expected TabChat after Shift+Right wrapping, got %v", model.ActiveTab())
+	}
+
+	// Shift+Left cycles backward: Chat -> Logs -> Surfaces -> Chat
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabLogs {
+		t.Errorf("expected TabLogs after Shift+Left, got %v", model.ActiveTab())
+	}
+
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabSurfaces {
+		t.Errorf("expected TabSurfaces after Shift+Left, got %v", model.ActiveTab())
+	}
+
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabChat {
+		t.Errorf("expected TabChat after Shift+Left wrapping, got %v", model.ActiveTab())
+	}
+}
+
+func TestTabSlashCommands(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	sendCommand := func(cmdStr string) {
+		for _, r := range cmdStr {
+			updated, _ = updated.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
+
+	// /tab surfaces from chat tab
+	sendCommand("/tab surfaces")
+	model := updated.(ui.Model)
+	if model.ActiveTab() != ui.TabSurfaces {
+		t.Errorf("expected TabSurfaces after '/tab surfaces', got %v", model.ActiveTab())
+	}
+
+	// Return to Chat tab to enter next command
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+
+	// /tab logs from chat tab
+	sendCommand("/tab logs")
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabLogs {
+		t.Errorf("expected TabLogs after '/tab logs', got %v", model.ActiveTab())
+	}
+
+	// Return to Chat tab
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+
+	// /tab 2 (surfaces)
+	sendCommand("/tab 2")
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabSurfaces {
+		t.Errorf("expected TabSurfaces after '/tab 2', got %v", model.ActiveTab())
+	}
+
+	// Return to Chat tab
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+
+	// /tab 3 (logs)
+	sendCommand("/tab 3")
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabLogs {
+		t.Errorf("expected TabLogs after '/tab 3', got %v", model.ActiveTab())
+	}
+
+	// Return to Chat tab
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+
+	// /tab chat
+	sendCommand("/tab chat")
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabChat {
+		t.Errorf("expected TabChat after '/tab chat', got %v", model.ActiveTab())
+	}
+}
+
+func TestTabMouseClickTabBar(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	// Header height is 2 (1 content line + 1 bottom border line)
+	// Tab Bar buttons row is Y=2
+	// Click on Tab 2 ("2 Surfaces") at X=15, Y=2
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 15, Y: 2, Button: tea.MouseLeft})
+	model := updated.(ui.Model)
+	if model.ActiveTab() != ui.TabSurfaces {
+		t.Errorf("expected TabSurfaces after clicking Tab 2 label, got %v", model.ActiveTab())
+	}
+
+	// Click on Tab 3 ("3 Logs") at X=28, Y=2
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 28, Y: 2, Button: tea.MouseLeft})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabLogs {
+		t.Errorf("expected TabLogs after clicking Tab 3 label, got %v", model.ActiveTab())
+	}
+
+	// Click on Tab 1 ("1 Chat") at X=4, Y=2
+	updated, _ = updated.Update(tea.MouseClickMsg{X: 4, Y: 2, Button: tea.MouseLeft})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabChat {
+		t.Errorf("expected TabChat after clicking Tab 1 label, got %v", model.ActiveTab())
+	}
+}
+
+func TestSurfaceArrivalStaysInChatTab(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	surfaceJSON := `<a2ui-json>
+{
+  "version": "v0.9",
+  "updateComponents": {
+    "surfaceId": "weather-widget",
+    "components": [
+      { "component": "Card", "id": "root", "child": "lbl" },
+      { "component": "Text", "id": "lbl", "text": "Sunny, 72F" }
+    ]
+  }
+}
+</a2ui-json>`
+
+	updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(surfaceJSON))
+	model := updated.(ui.Model)
+
+	// User stays in TabChat as required
+	if model.ActiveTab() != ui.TabChat {
+		t.Errorf("expected active tab to remain TabChat upon surface arrival, got %v", model.ActiveTab())
+	}
+
+	// Tab bar reflects surface count
+	viewStr := model.View().Content
+	if !strings.Contains(viewStr, "Surfaces (1)") {
+		t.Errorf("expected view to contain 'Surfaces (1)', view:\n%s", viewStr)
+	}
+
+	// Inline notice card is in chat feed
+	if !strings.Contains(viewStr, "📦 A2UI Surface: weather-widget") {
+		t.Errorf("expected inline notice in chat feed for weather-widget, view:\n%s", viewStr)
+	}
+}
+
+func TestTabIndependentScrollbackOffsets(t *testing.T) {
+	m := ui.NewModel(ui.Config{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+
+	// Add 30 messages so chat feed has significant scrollback
+	for i := 0; i < 30; i++ {
+		updated, _ = updated.Update(ui.NewAgentResponseMsgForTest(fmt.Sprintf("Message line #%d with some text", i)))
+	}
+	model := updated.(ui.Model)
+
+	// In TabChat, scroll to top
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModCtrl})
+	model = updated.(ui.Model)
+	chatOffsetTop := model.ChatViewportYOffset()
+	if chatOffsetTop != 0 {
+		t.Errorf("expected ChatViewportYOffset == 0 after Ctrl+Home, got %d", chatOffsetTop)
+	}
+
+	// Switch to TabLogs (F3)
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF3})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabLogs {
+		t.Fatalf("expected TabLogs, got %v", model.ActiveTab())
+	}
+
+	// In TabLogs, scroll down
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	model = updated.(ui.Model)
+	logsOffset := model.LogsViewportYOffset()
+
+	// Switch back to TabChat (F1)
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+	model = updated.(ui.Model)
+	if model.ActiveTab() != ui.TabChat {
+		t.Fatalf("expected TabChat, got %v", model.ActiveTab())
+	}
+
+	// Verify TabChat preserved its original offset (0)
+	if model.ChatViewportYOffset() != chatOffsetTop {
+		t.Errorf("expected ChatViewportYOffset to remain %d, got %d", chatOffsetTop, model.ChatViewportYOffset())
+	}
+
+	// Switch back to TabLogs and verify its scroll offset was also preserved
+	updated, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyF3})
+	model = updated.(ui.Model)
+	if model.LogsViewportYOffset() != logsOffset {
+		t.Errorf("expected LogsViewportYOffset to remain %d, got %d", logsOffset, model.LogsViewportYOffset())
 	}
 }
 

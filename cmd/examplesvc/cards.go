@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 // wrapA2UI wraps raw JSON components in an A2UI v0.9 updateComponents message and <a2ui-json> tags.
@@ -540,3 +542,161 @@ func actionResultCard(actionName string, sourceID string, ctxValues map[string]a
 	sb.WriteString(wrapA2UI("result-surface", components))
 	return sb.String()
 }
+
+// A2UIMIMEType is the standard MIME type for A2UI payloads.
+const A2UIMIMEType = "application/a2ui+json"
+
+// multipartCardComponents returns the A2UI components for the multi-part demo surface.
+func multipartCardComponents() []map[string]any {
+	return []map[string]any{
+		{
+			"component": "Card",
+			"id":        "root",
+			"child":     "multipart_col",
+		},
+		{
+			"component": "Column",
+			"id":        "multipart_col",
+			"children": []string{
+				"mp_title",
+				"mp_desc",
+				"mp_div_1",
+				"mp_row_badges",
+				"mp_div_2",
+				"mp_body",
+				"mp_div_3",
+				"mp_row_actions",
+			},
+		},
+		{
+			"component": "Text",
+			"id":        "mp_title",
+			"text":      "🔀 Multi-Part A2A Message",
+			"variant":   "h1",
+		},
+		{
+			"component": "Text",
+			"id":        "mp_desc",
+			"text":      "Demonstrating an A2A message with both text/plain and application/a2ui+json parts.",
+			"variant":   "caption",
+		},
+		{
+			"component": "Divider",
+			"id":        "mp_div_1",
+		},
+		{
+			"component": "Row",
+			"id":        "mp_row_badges",
+			"children":  []string{"mp_badge_parts", "mp_badge_mime", "mp_badge_status"},
+		},
+		{
+			"component": "Text",
+			"id":        "mp_badge_parts",
+			"text":      "[📦 Multi-Part A2A]",
+			"variant":   "body",
+		},
+		{
+			"component": "Text",
+			"id":        "mp_badge_mime",
+			"text":      "[🏷️ application/a2ui+json]",
+			"variant":   "body",
+		},
+		{
+			"component": "Text",
+			"id":        "mp_badge_status",
+			"text":      "[🟢 Connected]",
+			"variant":   "body",
+		},
+		{
+			"component": "Divider",
+			"id":        "mp_div_2",
+		},
+		{
+			"component": "Text",
+			"id":        "mp_body",
+			"text":      "This surface was delivered via an A2A DataPart carrying declarative A2UI components alongside a separate text part in the same response.",
+			"variant":   "body",
+		},
+		{
+			"component": "Divider",
+			"id":        "mp_div_3",
+		},
+		{
+			"component": "Row",
+			"id":        "mp_row_actions",
+			"children":  []string{"btn_mp_action", "btn_mp_return"},
+		},
+		{
+			"component": "Button",
+			"id":        "btn_mp_action",
+			"child":     "txt_mp_action",
+			"action": map[string]any{
+				"event": map[string]any{
+					"name": "multipart_test_action",
+					"context": map[string]any{
+						"source": "multipart_card",
+					},
+				},
+			},
+		},
+		{
+			"component": "Text",
+			"id":        "txt_mp_action",
+			"text":      "⚡ Test Action",
+		},
+		{
+			"component": "Button",
+			"id":        "btn_mp_return",
+			"child":     "txt_mp_return",
+			"action": map[string]any{
+				"event": map[string]any{
+					"name": "return_to_showcase",
+					"context": map[string]any{
+						"previous": "multipart",
+					},
+				},
+			},
+		},
+		{
+			"component": "Text",
+			"id":        "txt_mp_return",
+			"text":      "🔙 Return to Showcase",
+		},
+	}
+}
+
+// newA2UIDataPart creates an A2A DataPart containing A2UI messages with the
+// standard "application/a2ui+json" MIME type set in both MediaType and metadata.
+func newA2UIDataPart(surfaceID string, components []map[string]any) *a2a.Part {
+	uiPayload := []map[string]any{
+		{
+			"version": "v0.9",
+			"updateComponents": map[string]any{
+				"surfaceId":  surfaceID,
+				"components": components,
+			},
+		},
+	}
+	part := a2a.NewDataPart(uiPayload)
+	part.MediaType = A2UIMIMEType
+	part.SetMeta("mimeType", A2UIMIMEType)
+	return part
+}
+
+// multipartCard returns an A2A Message containing both a text part and an A2UI DataPart
+// with MIME type "application/a2ui+json".
+func multipartCard() *a2a.Message {
+	return multipartMessage()
+}
+
+// multipartMessage returns an A2A Message containing both a text part and an A2UI DataPart
+// with MIME type "application/a2ui+json".
+func multipartMessage() *a2a.Message {
+	textPart := a2a.NewTextPart("Here is a multi-part response with text and interactive A2UI:")
+	textPart.MediaType = "text/plain"
+
+	uiPart := newA2UIDataPart("multipart-surface", multipartCardComponents())
+
+	return a2a.NewMessage(a2a.MessageRoleAgent, textPart, uiPart)
+}
+
