@@ -22,6 +22,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/joestump-agent/a2tea/event"
 	tmca2ui "github.com/tmc/a2ui"
 
@@ -1052,6 +1053,56 @@ func TestTabIndependentScrollbackOffsets(t *testing.T) {
 	model = updated.(ui.Model)
 	if model.LogsViewportYOffset() != logsOffset {
 		t.Errorf("expected LogsViewportYOffset to remain %d, got %d", logsOffset, model.LogsViewportYOffset())
+	}
+}
+
+func TestModelMultiPartResponse(t *testing.T) {
+	model := ui.NewModel(ui.Config{
+		AgentURL: "http://localhost:8080",
+	})
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	model = updated.(ui.Model)
+
+	textPart := a2a.NewTextPart("Here is your requested card:")
+	uiPayload := []map[string]any{
+		{
+			"version": "v0.9",
+			"updateComponents": map[string]any{
+				"surfaceId": "card-surface-42",
+				"components": []map[string]any{
+					{"component": "Text", "id": "t1", "text": "Interactive Multi-Part Card Content"},
+				},
+			},
+		},
+	}
+	dataPart := a2a.NewDataPart(uiPayload)
+	dataPart.MediaType = "application/a2ui+json"
+
+	parts := []*a2a.Part{textPart, dataPart}
+
+	updated, _ = model.Update(ui.NewAgentResponsePartsMsgForTest(parts))
+	model = updated.(ui.Model)
+
+	items := model.Items()
+	var foundText, foundSurface bool
+	for _, it := range items {
+		if it.Kind == ui.KindAgentText && strings.Contains(it.Content, "Here is your requested card:") {
+			foundText = true
+		}
+		if it.Kind == ui.KindAgentSurface && it.SurfaceID == "card-surface-42" && it.Surface != nil {
+			foundSurface = true
+			out := it.Surface.View().Content
+			if !strings.Contains(out, "Interactive Multi-Part Card Content") {
+				t.Errorf("expected surface view to contain 'Interactive Multi-Part Card Content', got %q", out)
+			}
+		}
+	}
+
+	if !foundText {
+		t.Errorf("expected to find agent text item for multi-part response")
+	}
+	if !foundSurface {
+		t.Errorf("expected to find agent surface item for multi-part response")
 	}
 }
 

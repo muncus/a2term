@@ -112,8 +112,8 @@ func TestExampleServiceEndToEndJSONRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
-	if !strings.Contains(resp, "Button Gallery") {
-		t.Errorf("expected response to contain 'Button Gallery', got: %q", resp)
+	if !strings.Contains(a2aclient.ExtractPartsText(resp), "Button Gallery") {
+		t.Errorf("expected response to contain 'Button Gallery', got: %q", a2aclient.ExtractPartsText(resp))
 	}
 
 	// 2. Send action event
@@ -121,8 +121,8 @@ func TestExampleServiceEndToEndJSONRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendActionEvent failed: %v", err)
 	}
-	if !strings.Contains(actionResp, "approve_request") {
-		t.Errorf("expected action response to contain 'approve_request', got: %q", actionResp)
+	if !strings.Contains(a2aclient.ExtractPartsText(actionResp), "approve_request") {
+		t.Errorf("expected action response to contain 'approve_request', got: %q", a2aclient.ExtractPartsText(actionResp))
 	}
 
 	// 3. Send prompt for showcase
@@ -130,8 +130,27 @@ func TestExampleServiceEndToEndJSONRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage for showcase failed: %v", err)
 	}
-	if !strings.Contains(showcaseResp, "A2UI Interactive Component Showcase") {
-		t.Errorf("expected showcase response, got: %q", showcaseResp)
+	if !strings.Contains(a2aclient.ExtractPartsText(showcaseResp), "A2UI Interactive Component Showcase") {
+		t.Errorf("expected showcase response, got: %q", a2aclient.ExtractPartsText(showcaseResp))
+	}
+
+	// 4. Send prompt for multipart
+	multiResp, err := client.SendMessage(ctx, "multipart")
+	if err != nil {
+		t.Fatalf("SendMessage for multipart failed: %v", err)
+	}
+	if len(multiResp) != 2 {
+		t.Fatalf("expected 2 parts from multipart command, got %d", len(multiResp))
+	}
+	segs, err := a2ui.ParseAgentParts(multiResp)
+	if err != nil {
+		t.Fatalf("ParseAgentParts on multipart response failed: %v", err)
+	}
+	if len(segs) != 2 {
+		t.Fatalf("expected 2 parsed segments, got %d", len(segs))
+	}
+	if segs[0].Type != a2ui.TypeText || segs[1].Type != a2ui.TypeSurface {
+		t.Errorf("unexpected segment types: seg0=%v, seg1=%v", segs[0].Type, segs[1].Type)
 	}
 }
 

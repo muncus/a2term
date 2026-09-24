@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/joestump-agent/a2tea/event"
 	tmca2ui "github.com/tmc/a2ui"
 
@@ -143,3 +144,98 @@ func TestActionSummary(t *testing.T) {
 		t.Errorf("unexpected client message summary: %s, %s, %s", name, src, summary)
 	}
 }
+
+func TestParseAgentPartsMultiPart(t *testing.T) {
+	textPart := a2a.NewTextPart("Here is the interactive component:")
+
+	components := []map[string]any{
+		{"component": "Card", "id": "root", "child": "col"},
+		{"component": "Column", "id": "col", "children": []string{"title", "btn"}},
+		{"component": "Text", "id": "title", "text": "Multi-Part Surface Test"},
+		{"component": "Button", "id": "btn", "child": "btn_txt", "action": map[string]any{"event": map[string]any{"name": "test_click"}}},
+		{"component": "Text", "id": "btn_txt", "text": "Click Me"},
+	}
+	uiPayload := []map[string]any{
+		{
+			"version": "v0.9",
+			"updateComponents": map[string]any{
+				"surfaceId":  "test-surface-1",
+				"components": components,
+			},
+		},
+	}
+	uiPart := a2a.NewDataPart(uiPayload)
+	uiPart.MediaType = "application/a2ui+json"
+
+	parts := []*a2a.Part{textPart, uiPart}
+
+	segments, err := a2ui.ParseAgentParts(parts)
+	if err != nil {
+		t.Fatalf("ParseAgentParts failed: %v", err)
+	}
+
+	if len(segments) != 2 {
+		t.Fatalf("expected 2 segments, got %d", len(segments))
+	}
+
+	if segments[0].Type != a2ui.TypeText || !strings.Contains(segments[0].Text, "interactive component") {
+		t.Errorf("expected text segment, got %+v", segments[0])
+	}
+
+	if segments[1].Type != a2ui.TypeSurface {
+		t.Errorf("expected surface segment, got type %v", segments[1].Type)
+	}
+	if segments[1].SurfaceID != "test-surface-1" {
+		t.Errorf("expected surfaceID 'test-surface-1', got %q", segments[1].SurfaceID)
+	}
+	if segments[1].Surface == nil {
+		t.Fatal("expected non-nil Surface model")
+	}
+	out := segments[1].Surface.View().Content
+	if !strings.Contains(out, "Multi-Part Surface Test") {
+		t.Errorf("expected surface output to contain 'Multi-Part Surface Test', got: %q", out)
+	}
+}
+
+func TestParseAgentPartsSingleObject(t *testing.T) {
+	singleMsg := map[string]any{
+		"version": "v0.9",
+		"updateComponents": map[string]any{
+			"surfaceId": "single-obj-surface",
+			"components": []map[string]any{
+				{"component": "Text", "id": "root", "text": "Hello Single Object"},
+			},
+		},
+	}
+	uiPart := a2a.NewDataPart(singleMsg)
+	uiPart.SetMeta("mimeType", "application/a2ui+json")
+
+	segments, err := a2ui.ParseAgentParts([]*a2a.Part{uiPart})
+	if err != nil {
+		t.Fatalf("ParseAgentParts failed: %v", err)
+	}
+	if len(segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(segments))
+	}
+	if segments[0].Type != a2ui.TypeSurface || segments[0].SurfaceID != "single-obj-surface" {
+		t.Errorf("unexpected segment: %+v", segments[0])
+	}
+}
+
+func TestParseAgentPartsMultimodal(t *testing.T) {
+	rawPart := a2a.NewRawPart([]byte{0x89, 'P', 'N', 'G'})
+	rawPart.MediaType = "image/png"
+	rawPart.Filename = "diagram.png"
+
+	segments, err := a2ui.ParseAgentParts([]*a2a.Part{rawPart})
+	if err != nil {
+		t.Fatalf("ParseAgentParts failed: %v", err)
+	}
+	if len(segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(segments))
+	}
+	if !strings.Contains(segments[0].Text, "diagram.png") || !strings.Contains(segments[0].Text, "image/png") {
+		t.Errorf("expected image description, got: %q", segments[0].Text)
+	}
+}
+

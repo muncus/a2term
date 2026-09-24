@@ -28,7 +28,8 @@ import (
 	"github.com/joestump-agent/a2tea/render"
 	tmca2ui "github.com/tmc/a2ui"
 
-	"github.com/muncus/a2term/pkg/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	a2aclient "github.com/muncus/a2term/pkg/a2a"
 	"github.com/muncus/a2term/pkg/a2ui"
 	"github.com/muncus/a2term/pkg/agent"
 )
@@ -36,11 +37,12 @@ import (
 // Internal message types for async A2A agent events
 type (
 	agentResponseMsg struct {
-		text string
+		parts []*a2a.Part
 	}
 
 	agentStreamChunkMsg struct {
 		chunk   string
+		parts   []*a2a.Part
 		isFinal bool
 	}
 
@@ -175,7 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isStreaming = false
 		m.status = "Connected"
 
-		m.appendAgentResponseContent(msg.text)
+		m.appendAgentResponseParts(msg.parts)
 
 		wasAtBottom := m.chatViewport.AtBottom()
 		m.updateViewportContent()
@@ -189,6 +191,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isStreaming = true
 		m.status = "Streaming..."
 
+		chunkText := msg.chunk
+		if chunkText == "" && len(msg.parts) > 0 {
+			chunkText = a2aclient.ExtractPartsText(msg.parts)
+		}
+
 		if msg.isFinal {
 			m.isLoading = false
 			m.isStreaming = false
@@ -200,14 +207,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.streamItemID = ""
 			}
 
-			m.appendAgentResponseContent(msg.chunk)
+			if len(msg.parts) > 0 {
+				m.appendAgentResponseParts(msg.parts)
+			} else if chunkText != "" {
+				m.appendAgentResponseContent(chunkText)
+			}
 		} else {
 			// Update ongoing streaming text item
 			if m.streamItemID == "" {
 				m.streamItemID = uuid.NewString()
-				m.items = append(m.items, NewAgentTextItem(m.streamItemID, msg.chunk))
+				m.items = append(m.items, NewAgentTextItem(m.streamItemID, chunkText))
 			} else {
-				m.updateFeedItemContent(m.streamItemID, msg.chunk)
+				m.updateFeedItemContent(m.streamItemID, chunkText)
 			}
 		}
 
@@ -640,7 +651,7 @@ func (m *Model) handleCommand(cmdStr string) (tea.Model, tea.Cmd) {
 			m.isLoading = true
 			m.status = "Connecting..."
 			m.updateViewportContent()
-			return *m, m.reconnectCmd(a2a.ClientOptions{AgentURL: url, AuthToken: m.authToken}, url)
+			return *m, m.reconnectCmd(a2aclient.ClientOptions{AgentURL: url, AuthToken: m.authToken}, url)
 		}
 
 	case "/card":
@@ -653,7 +664,7 @@ func (m *Model) handleCommand(cmdStr string) (tea.Model, tea.Cmd) {
 			m.isLoading = true
 			m.status = "Resolving card..."
 			m.updateViewportContent()
-			return *m, m.reconnectCmd(a2a.ClientOptions{CardURL: url, AuthToken: m.authToken}, url)
+			return *m, m.reconnectCmd(a2aclient.ClientOptions{CardURL: url, AuthToken: m.authToken}, url)
 		}
 
 	case "/auth":
@@ -673,10 +684,10 @@ func (m *Model) handleCommand(cmdStr string) (tea.Model, tea.Cmd) {
 				m.items = append(m.items, NewSystemItem(uuid.NewString(), "Bearer authorization token updated."))
 			}
 			target := m.agentURL
-			opts := a2a.ClientOptions{AgentURL: target, AuthToken: m.authToken}
+			opts := a2aclient.ClientOptions{AgentURL: target, AuthToken: m.authToken}
 			if target == "" {
 				target = m.cardURL
-				opts = a2a.ClientOptions{CardURL: target, AuthToken: m.authToken}
+				opts = a2aclient.ClientOptions{CardURL: target, AuthToken: m.authToken}
 			}
 			if target != "" {
 				m.isLoading = true
@@ -719,7 +730,7 @@ func (m *Model) sendMessageCmd(text string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		resp, err := client.SendMessage(ctx, text)
+		parts, err := client.SendMessage(ctx, text)
 		if err != nil {
 			return agentErrorMsg{
 				err:    err,
@@ -727,7 +738,7 @@ func (m *Model) sendMessageCmd(text string) tea.Cmd {
 				phase:  "SendMessage Execution",
 			}
 		}
-		return agentResponseMsg{text: resp}
+		return agentResponseMsg{parts: parts}
 	}
 }
 
@@ -749,7 +760,7 @@ func (m *Model) sendActionCmd(actionName, sourceID string, contextValues map[str
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		resp, err := client.SendActionEvent(ctx, actionName, sourceID, contextValues)
+		parts, err := client.SendActionEvent(ctx, actionName, sourceID, contextValues)
 		if err != nil {
 			return agentErrorMsg{
 				err:    err,
@@ -757,16 +768,16 @@ func (m *Model) sendActionCmd(actionName, sourceID string, contextValues map[str
 				phase:  fmt.Sprintf("SendActionEvent (%s)", actionName),
 			}
 		}
-		return agentResponseMsg{text: resp}
+		return agentResponseMsg{parts: parts}
 	}
 }
 
-func (m *Model) reconnectCmd(opts a2a.ClientOptions, targetURL string) tea.Cmd {
+func (m *Model) reconnectCmd(opts a2aclient.ClientOptions, targetURL string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		cli, err := a2a.NewClient(ctx, opts)
+		cli, err := a2aclient.NewClient(ctx, opts)
 		if err != nil {
 			return agentErrorMsg{
 				err:    err,
@@ -809,15 +820,17 @@ func (m *Model) handleUIAction(summary string, sendCmd tea.Cmd) (tea.Model, tea.
 	return *m, tea.Batch(cmds...)
 }
 
-func (m *Model) appendAgentResponseContent(content string) {
-	trimmed := strings.TrimSpace(content)
-	if trimmed == "" {
+func (m *Model) appendAgentResponseParts(parts []*a2a.Part) {
+	if len(parts) == 0 {
 		return
 	}
 
-	segments, err := a2ui.ParseAgentResponse(content, render.WithStyles(a2ui.DefaultTerminalStyles()))
+	segments, err := a2ui.ParseAgentParts(parts, render.WithStyles(a2ui.DefaultTerminalStyles()))
 	if err != nil || len(segments) == 0 {
-		m.items = append(m.items, NewAgentTextItem(uuid.NewString(), content))
+		text := a2aclient.ExtractPartsText(parts)
+		if strings.TrimSpace(text) != "" {
+			m.items = append(m.items, NewAgentTextItem(uuid.NewString(), text))
+		}
 		return
 	}
 
@@ -835,6 +848,14 @@ func (m *Model) appendAgentResponseContent(content string) {
 			m.items = append(m.items, NewAgentTextItem(uuid.NewString(), seg.Text))
 		}
 	}
+}
+
+func (m *Model) appendAgentResponseContent(content string) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return
+	}
+	m.appendAgentResponseParts([]*a2a.Part{a2a.NewTextPart(content)})
 }
 
 func (m *Model) clearToastAfter(d time.Duration) tea.Cmd {

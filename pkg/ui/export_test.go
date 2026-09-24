@@ -14,13 +14,21 @@
 
 package ui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+)
 
 // Export internal messages and inspectors for testing in ui_test package
 
 // NewAgentResponseMsgForTest creates an agentResponseMsg for tests.
 func NewAgentResponseMsgForTest(text string) tea.Msg {
-	return agentResponseMsg{text: text}
+	return agentResponseMsg{parts: []*a2a.Part{a2a.NewTextPart(text)}}
+}
+
+// NewAgentResponsePartsMsgForTest creates an agentResponseMsg with parts for tests.
+func NewAgentResponsePartsMsgForTest(parts []*a2a.Part) tea.Msg {
+	return agentResponseMsg{parts: parts}
 }
 
 // NewAgentStreamChunkMsgForTest creates an agentStreamChunkMsg for tests.

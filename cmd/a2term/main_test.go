@@ -157,8 +157,8 @@ func TestAuthFlagSendsAuthorizationHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
-	if resp != "Response from authorized server" {
-		t.Errorf("expected 'Response from authorized server', got %q", resp)
+	if text := a2a.ExtractPartsText(resp); text != "Response from authorized server" {
+		t.Errorf("expected 'Response from authorized server', got %q", text)
 	}
 	if receivedCallAuth != expectedHeader {
 		t.Errorf("agent call received header %q, want %q", receivedCallAuth, expectedHeader)

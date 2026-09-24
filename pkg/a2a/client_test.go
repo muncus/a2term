@@ -114,8 +114,8 @@ func TestClientWithMockServerJSONRPC(t *testing.T) {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
 
-	if reply != "Hello from JSON-RPC mock agent!" {
-		t.Errorf("expected 'Hello from JSON-RPC mock agent!', got %q", reply)
+	if text := a2aclient.ExtractPartsText(reply); text != "Hello from JSON-RPC mock agent!" {
+		t.Errorf("expected 'Hello from JSON-RPC mock agent!', got %q", text)
 	}
 }
 
@@ -174,8 +174,8 @@ func TestClientWithMockServerREST(t *testing.T) {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
 
-	if reply != "Hello from REST mock agent!" {
-		t.Errorf("expected 'Hello from REST mock agent!', got %q", reply)
+	if text := a2aclient.ExtractPartsText(reply); text != "Hello from REST mock agent!" {
+		t.Errorf("expected 'Hello from REST mock agent!', got %q", text)
 	}
 }
 
@@ -245,8 +245,8 @@ func TestClientWithTaskArtifacts(t *testing.T) {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
 
-	if reply != "ADK Agent Output via Artifacts" {
-		t.Errorf("expected 'ADK Agent Output via Artifacts', got %q", reply)
+	if text := a2aclient.ExtractPartsText(reply); text != "ADK Agent Output via Artifacts" {
+		t.Errorf("expected 'ADK Agent Output via Artifacts', got %q", text)
 	}
 }
 
@@ -496,8 +496,8 @@ func TestClientAuthHeaderJSONRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
-	if resp != "Authorized response!" {
-		t.Errorf("expected 'Authorized response!', got %q", resp)
+	if text := a2aclient.ExtractPartsText(resp); text != "Authorized response!" {
+		t.Errorf("expected 'Authorized response!', got %q", text)
 	}
 	if callAuthHeader != "Bearer secret-token-xyz" {
 		t.Errorf("call endpoint received header %q, want %q", callAuthHeader, "Bearer secret-token-xyz")
@@ -577,8 +577,8 @@ func TestClientAuthHeaderREST(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
-	if resp != "REST response!" {
-		t.Errorf("expected 'REST response!', got %q", resp)
+	if text := a2aclient.ExtractPartsText(resp); text != "REST response!" {
+		t.Errorf("expected 'REST response!', got %q", text)
 	}
 	if receivedAuthHeader != expectedToken {
 		t.Errorf("expected header %q, got %q", expectedToken, receivedAuthHeader)
