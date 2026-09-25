@@ -96,4 +96,46 @@ func (m Model) LogsViewportYOffset() int {
 	return m.logsViewport.YOffset()
 }
 
+// SetOpenBrowserFuncForTest overrides openBrowserFunc for testing and returns a cleanup func.
+func SetOpenBrowserFuncForTest(fn func(string) error) func() {
+	orig := openBrowserFunc
+	openBrowserFunc = fn
+	return func() {
+		openBrowserFunc = orig
+	}
+}
 
+// RenderHeaderForTest returns the rendered header string for testing.
+func (m *Model) RenderHeaderForTest() string {
+	return m.renderHeader()
+}
+
+// RenderFooterForTest returns the rendered footer string for testing.
+func (m *Model) RenderFooterForTest() string {
+	return m.renderFooter()
+}
+
+// RenderInputForTest returns the rendered input string for testing.
+func (m *Model) RenderInputForTest() string {
+	return m.renderInput()
+}
+
+// ViewportHeightForTest returns the viewport height.
+func (m *Model) ViewportHeightForTest() int {
+	return m.viewport.Height()
+}
+
+// ViewportYOffsetForTest returns the viewport YOffset.
+func (m *Model) ViewportYOffsetForTest() int {
+	return m.viewport.YOffset()
+}
+
+// ItemsForTest returns items.
+func (m *Model) ItemsForTest() []FeedItem {
+	return m.items
+}
+
+// RenderFeedItemForTest returns rendered feed item.
+func (m *Model) RenderFeedItemForTest(i int, item FeedItem) string {
+	return m.renderChatFeedItem(i, item)
+}

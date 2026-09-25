@@ -136,8 +136,8 @@ func IsA2UIPart(part *a2a.Part) bool {
 	return false
 }
 
-// extractServerMessages decodes A2UI server messages from a Part's Data, Raw, or Text.
-func extractServerMessages(part *a2a.Part) ([]tmca2ui.ServerMessage, error) {
+// ExtractServerMessages decodes A2UI server messages from a Part's Data, Raw, or Text.
+func ExtractServerMessages(part *a2a.Part) ([]tmca2ui.ServerMessage, error) {
 	if part == nil {
 		return nil, fmt.Errorf("nil part")
 	}
@@ -207,7 +207,7 @@ func ParseAgentParts(parts []*a2a.Part, customStyles ...render.Option) ([]Parsed
 
 		// 1. A2UI Data/Raw part with application/a2ui+json MIME type
 		if IsA2UIPart(part) {
-			msgs, err := extractServerMessages(part)
+			msgs, err := ExtractServerMessages(part)
 			if err == nil && len(msgs) > 0 {
 				surfaceModel, err := a2tea.Render(msgs, customStyles...)
 				if err == nil && surfaceModel != nil {

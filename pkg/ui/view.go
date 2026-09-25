@@ -34,29 +34,44 @@ func (m Model) View() tea.View {
 
 	var sections []string
 
-	// 1. Header Bar
-	sections = append(sections, m.renderHeader())
+	// Header Bar
+	headerView := m.renderHeader()
+	sections = append(sections, headerView)
 
-	// 2. Tab Bar
-	sections = append(sections, m.renderTabBar())
+	// Tab Bar
+	tabBarView := m.renderTabBar()
+	sections = append(sections, tabBarView)
 
-	// 3. Active Tab Viewport
-	sections = append(sections, m.activeViewport().View())
+	// Main Chat / Surfaces Viewport
+	sections = append(sections, m.viewport.View())
 
-	// 4. Action Toast Bar (if present)
+	// Action Toast Bar (if present)
 	if m.toast != "" {
 		sections = append(sections, m.styles.ToastBox.Render(m.toast))
 	}
 
-	// 5. Input Prompt Box (only visible on Chat tab)
+	// Input Prompt Box (only visible on Chat tab)
 	if m.activeTab == TabChat {
 		sections = append(sections, m.renderInput())
 	}
 
-	// 6. Footer Shortcuts Bar
+	// Footer Shortcuts Bar
 	sections = append(sections, m.renderFooter())
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+
+	// Safety guard: ensure total view height never exceeds m.height so the footer is never pushed off-screen
+	if m.height > 0 {
+		lines := strings.Split(content, "\n")
+		if len(lines) > m.height {
+			excess := len(lines) - m.height
+			headerH := lipgloss.Height(headerView)
+			if headerH < len(lines)-excess {
+				lines = append(lines[:headerH], lines[headerH+excess:]...)
+				content = strings.Join(lines, "\n")
+			}
+		}
+	}
 
 	v := tea.NewView(content)
 	v.AltScreen = true
@@ -67,24 +82,20 @@ func (m Model) View() tea.View {
 func (m *Model) renderHeader() string {
 	title := m.styles.HeaderTitle.Render("github.com/muncus/a2term")
 
-	var statusText string
-	var statusStyled string
-	if m.isLoading || m.isStreaming {
-		statusText = fmt.Sprintf("%s %s", m.spinner.View(), m.status)
-		statusStyled = m.styles.HeaderStatus.Render(statusText)
-	} else if m.status == "Connection Failed" || m.status == "Error" || m.status == "Disconnected" {
-		statusText = fmt.Sprintf("● %s", m.status)
-		statusStyled = m.styles.HeaderStatusError.Render(statusText)
+	var circle string
+	if m.IsConnected() {
+		circle = m.styles.HeaderConnectedDot.Render("●")
 	} else {
-		statusText = fmt.Sprintf("● %s", m.status)
-		statusStyled = m.styles.HeaderStatus.Render(statusText)
+		circle = m.styles.HeaderDisconnectedDot.Render("●")
 	}
 
-	agentName := "Agent: None"
-	if m.client != nil {
-		agentName = fmt.Sprintf("Agent: %s", m.client.AgentName())
+	agentName := "None"
+	if m.client != nil && m.client.AgentName() != "" {
+		agentName = m.client.AgentName()
 	} else if m.agentURL != "" {
-		agentName = fmt.Sprintf("Target: %s", m.agentURL)
+		agentName = m.agentURL
+	} else if m.cardURL != "" {
+		agentName = m.cardURL
 	}
 	agent := m.styles.HeaderAgent.Render(agentName)
 
@@ -98,10 +109,27 @@ func (m *Model) renderHeader() string {
 		}
 	}
 
-	left := lipgloss.JoinHorizontal(lipgloss.Center, title, " ", statusStyled, " ", agent)
+	left := lipgloss.JoinHorizontal(lipgloss.Center, title, "  ", circle, " ", agent)
 	right := sessionBadge
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	insideWidth := m.width - 2
+	if insideWidth < 20 {
+		insideWidth = 20
+	}
+
+	// Adapt header items so they never wrap to a second line
+	if lipgloss.Width(left)+lipgloss.Width(right)+1 > insideWidth {
+		right = ""
+	}
+	if lipgloss.Width(left)+lipgloss.Width(right)+1 > insideWidth {
+		maxAgentLen := insideWidth - lipgloss.Width(title) - 6
+		if maxAgentLen > 3 && len(agentName) > maxAgentLen {
+			agent = m.styles.HeaderAgent.Render(agentName[:maxAgentLen-3] + "...")
+			left = lipgloss.JoinHorizontal(lipgloss.Center, title, "  ", circle, " ", agent)
+		}
+	}
+
+	gap := insideWidth - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
@@ -192,56 +220,6 @@ func (m *Model) renderInput() string {
 }
 
 func (m *Model) renderFooter() string {
-	var keys []struct {
-		key  string
-		desc string
-	}
-
-	switch m.activeTab {
-	case TabChat:
-		keys = []struct {
-			key  string
-			desc string
-		}{
-			{"F1-F3", "Tabs"},
-			{"Shift+←/→", "Cycle"},
-			{"Enter", "Send"},
-			{"PgUp/Dn", "Scroll"},
-			{"/help", "Commands"},
-			{"Ctrl+C", "Quit"},
-		}
-	case TabSurfaces:
-		keys = []struct {
-			key  string
-			desc string
-		}{
-			{"F1-F3", "Tabs"},
-			{"Shift+←/→", "Cycle"},
-			{"Tab", "Control"},
-			{"Enter", "Activate"},
-			{"Esc", "Chat"},
-			{"Ctrl+C", "Quit"},
-		}
-	case TabLogs:
-		keys = []struct {
-			key  string
-			desc string
-		}{
-			{"F1-F3", "Tabs"},
-			{"Shift+←/→", "Cycle"},
-			{"PgUp/Dn", "Scroll"},
-			{"Ctrl+Home/End", "Jump"},
-			{"Esc", "Chat"},
-			{"Ctrl+C", "Quit"},
-		}
-	}
-
-	var keyParts []string
-	for _, k := range keys {
-		keyParts = append(keyParts, fmt.Sprintf("%s %s", m.styles.FooterKey.Render(k.key), m.styles.FooterDesc.Render(k.desc)))
-	}
-
-	left := strings.Join(keyParts, "  ")
 
 	activeVP := m.activeViewport()
 	var scrollBadge string
@@ -256,7 +234,28 @@ func (m *Model) renderFooter() string {
 		scrollBadge = m.styles.ScrollAlert.Render(fmt.Sprintf("⬇ %d%% • [End: Bottom]", pct))
 	}
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(scrollBadge)
+	insideWidth := m.width - 2
+	if insideWidth < 20 {
+		insideWidth = 20
+	}
+
+	var left string
+	if m.isLoading || m.isStreaming {
+		statusText := fmt.Sprintf("%s %s", m.spinner.View(), m.status)
+		left = m.styles.FooterStatus.Render(statusText)
+	} else if m.status == "Connection Failed" || m.status == "Error" || m.status == "Disconnected" || m.status == "Auth Failed" {
+		statusText := fmt.Sprintf("● %s", m.status)
+		left = m.styles.HeaderStatusError.Render(statusText)
+	} else {
+		// Placeholder on the left where the spinner appears
+		statusText := "Ready"
+		if m.status != "" && m.status != "Thinking..." && m.status != "Streaming..." && m.status != "Sending action..." {
+			statusText = m.status
+		}
+		left = m.styles.FooterDesc.Render(fmt.Sprintf("● %s", statusText))
+	}
+
+	gap := insideWidth - lipgloss.Width(left) - lipgloss.Width(scrollBadge)
 	if gap < 1 {
 		gap = 1
 	}
@@ -286,13 +285,13 @@ func (m *Model) renderChatFeedItem(idx int, item FeedItem) string {
 		role := m.styles.UserRole.Render(fmt.Sprintf("👤 You (%s)", item.Timestamp.Format("15:04")))
 		text := m.styles.UserText.Render(item.Content)
 		msg := fmt.Sprintf("%s\n%s", role, text)
-		return m.styles.UserMessageBox.Width(m.width - 4).Render(msg) + "\n"
+		return m.styles.UserMessageBox.Width(m.width-4).Render(msg) + "\n"
 
 	case KindAgentText:
 		role := m.styles.AgentRole.Render(fmt.Sprintf("🤖 Agent (%s)", item.Timestamp.Format("15:04")))
 		text := m.styles.AgentText.Render(item.Content)
 		msg := fmt.Sprintf("%s\n%s", role, text)
-		return m.styles.AgentMessageBox.Width(m.width - 4).Render(msg) + "\n"
+		return m.styles.AgentMessageBox.Width(m.width-4).Render(msg) + "\n"
 
 	case KindAgentSurface:
 		surfID := item.SurfaceID
@@ -305,7 +304,7 @@ func (m *Model) renderChatFeedItem(idx int, item FeedItem) string {
 		return cardNotice + "\n"
 
 	case KindSystem:
-		return m.styles.SystemMessage.Render("ℹ️ " + item.Content) + "\n\n"
+		return m.styles.SystemMessage.Render("ℹ️ "+item.Content) + "\n\n"
 
 	case KindDiagnostic:
 		if item.Diagnostic != nil {
@@ -332,12 +331,12 @@ func (m *Model) renderChatFeedItem(idx int, item FeedItem) string {
 				}
 			}
 			content := strings.Join(diagLines, "\n")
-			return m.styles.DiagnosticBox.Width(m.width - 4).Render(content) + "\n"
+			return m.styles.DiagnosticBox.Width(m.width-4).Render(content) + "\n"
 		}
 		return ""
 
 	case KindError:
-		return m.styles.ErrorMessage.Render("❌ " + item.Content) + "\n"
+		return m.styles.ErrorMessage.Render("❌ "+item.Content) + "\n"
 
 	default:
 		return ""
@@ -478,7 +477,7 @@ func (m *Model) updateLogsViewportContent() {
 					}
 				}
 				content := strings.Join(diagLines, "\n")
-				sb.WriteString(m.styles.DiagnosticBox.Width(m.width - 4).Render(content) + "\n")
+				sb.WriteString(m.styles.DiagnosticBox.Width(m.width-4).Render(content) + "\n")
 			}
 		}
 	}
@@ -580,6 +579,3 @@ func (m *Model) findItemAtContentLine(targetLine int) int {
 	}
 	return -1
 }
-
-
-

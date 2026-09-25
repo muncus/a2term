@@ -17,14 +17,17 @@ package a2a_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 
 	a2aclient "github.com/muncus/a2term/pkg/a2a"
+	"github.com/muncus/a2term/pkg/agent"
 )
 
 func TestExtractText(t *testing.T) {
@@ -474,6 +477,9 @@ func TestClientAuthHeaderJSONRPC(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected connection without auth token to fail on 401")
 	}
+	if !errors.Is(err, agent.ErrAuthFailed) {
+		t.Errorf("expected error to wrap agent.ErrAuthFailed, got: %v", err)
+	}
 
 	// 2. Test connecting with token value
 	client, err := a2aclient.NewClient(ctx, a2aclient.ClientOptions{
@@ -584,4 +590,201 @@ func TestClientAuthHeaderREST(t *testing.T) {
 		t.Errorf("expected header %q, got %q", expectedToken, receivedAuthHeader)
 	}
 }
+
+func TestIsA2UIPart(t *testing.T) {
+	if a2aclient.IsA2UIPart(nil) {
+		t.Error("expected nil part to return false")
+	}
+
+	plainPart := a2a.NewTextPart("hello")
+	if a2aclient.IsA2UIPart(plainPart) {
+		t.Error("expected text/plain part to return false")
+	}
+
+	partStandard := a2a.NewDataPart(map[string]any{"updateComponents": map[string]any{}})
+	partStandard.MediaType = a2aclient.A2UIMIMEType
+	if !a2aclient.IsA2UIPart(partStandard) {
+		t.Errorf("expected MediaType %s to be recognized as A2UI part", a2aclient.A2UIMIMEType)
+	}
+
+	partLegacy := a2a.NewDataPart(map[string]any{"updateComponents": map[string]any{}})
+	partLegacy.MediaType = a2aclient.A2UIMIMETypeLegacy
+	if !a2aclient.IsA2UIPart(partLegacy) {
+		t.Errorf("expected MediaType %s to be recognized as A2UI part", a2aclient.A2UIMIMETypeLegacy)
+	}
+
+	partMeta := a2a.NewDataPart(map[string]any{"updateComponents": map[string]any{}})
+	partMeta.Metadata = map[string]any{"mimeType": a2aclient.A2UIMIMEType}
+	if !a2aclient.IsA2UIPart(partMeta) {
+		t.Errorf("expected metadata mimeType %s to be recognized as A2UI part", a2aclient.A2UIMIMEType)
+	}
+}
+
+func TestExtractTextA2UIPart(t *testing.T) {
+	uiPayload := map[string]any{
+		"updateComponents": map[string]any{
+			"surfaceId": "main",
+			"components": []any{
+				map[string]any{"id": "root", "component": "Text", "text": map[string]any{"literal": "Hello A2UI"}},
+			},
+		},
+	}
+	part := a2a.NewDataPart(uiPayload)
+	part.MediaType = a2aclient.A2UIMIMEType
+
+	msg := a2a.NewMessage(a2a.MessageRoleAgent,
+		a2a.NewTextPart("Welcome"),
+		part,
+	)
+
+	text := a2aclient.ExtractText(msg)
+	if !strings.Contains(text, "Welcome") {
+		t.Errorf("expected text to contain 'Welcome', got %q", text)
+	}
+	if !strings.Contains(text, "<a2ui-json>") || !strings.Contains(text, "</a2ui-json>") {
+		t.Errorf("expected A2UI data part to be wrapped in <a2ui-json> tags, got %q", text)
+	}
+	if !strings.Contains(text, "Hello A2UI") {
+		t.Errorf("expected payload content in extracted text, got %q", text)
+	}
+}
+
+func TestA2UIClientCapabilitiesAndActionMetadata(t *testing.T) {
+	mux := http.NewServeMux()
+	var serverURL string
+	var lastReceivedMessage *a2a.Message
+
+	mux.HandleFunc("/.well-known/agent-card.json", func(w http.ResponseWriter, r *http.Request) {
+		card := a2a.AgentCard{
+			Name: "Capabilities Agent",
+			SupportedInterfaces: []*a2a.AgentInterface{
+				{
+					URL:             serverURL,
+					ProtocolBinding: a2a.TransportProtocolJSONRPC,
+					ProtocolVersion: a2a.Version,
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(card)
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		// Parse the message sent by client
+		if params, ok := req["params"].(map[string]any); ok {
+			if msgMap, ok := params["message"].(map[string]any); ok {
+				msgBytes, _ := json.Marshal(msgMap)
+				var msg a2a.Message
+				_ = json.Unmarshal(msgBytes, &msg)
+				lastReceivedMessage = &msg
+			}
+		}
+
+		resp := map[string]any{
+			"jsonrpc": "2.0",
+			"id":      req["id"],
+			"result": map[string]any{
+				"message": map[string]any{
+					"messageId": "resp-1",
+					"role":      "ROLE_AGENT",
+					"parts": []map[string]any{
+						{"text": "OK"},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	ctx := context.Background()
+	client, err := a2aclient.NewClient(ctx, a2aclient.ClientOptions{
+		AgentURL: serverURL,
+	})
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// 1. Test SendMessage attaches capabilities
+	_, err = client.SendMessage(ctx, "hello")
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+	if lastReceivedMessage == nil {
+		t.Fatal("expected message to be received by mock server")
+	}
+	caps, ok := lastReceivedMessage.Metadata[a2aclient.ClientCapabilitiesKey].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata %q to be present, got: %v", a2aclient.ClientCapabilitiesKey, lastReceivedMessage.Metadata)
+	}
+	v091, ok := caps["v0.9.1"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected v0.9.1 capabilities map, got: %v", caps)
+	}
+	catalogs, ok := v091["supportedCatalogIds"].([]any)
+	if !ok || len(catalogs) == 0 || catalogs[0] != a2aclient.A2UIBasicCatalogID {
+		t.Errorf("expected basic catalog ID in capabilities, got: %v", catalogs)
+	}
+
+	// 2. Test SendA2UIAction with surfaceId and clientDataModel
+	testDataModel := map[string]any{
+		"version": "v0.9",
+		"surfaces": map[string]any{
+			"surface-123": map[string]any{"city": "Paris"},
+		},
+	}
+	_, err = client.SendA2UIAction(ctx, "submit_form", "surface-123", "btn_submit", map[string]any{"input": "val"}, testDataModel)
+	if err != nil {
+		t.Fatalf("SendA2UIAction failed: %v", err)
+	}
+	if lastReceivedMessage == nil {
+		t.Fatal("expected action message to be received")
+	}
+
+	// Verify client data model was attached to metadata
+	dataModelMeta, ok := lastReceivedMessage.Metadata[a2aclient.ClientDataModelKey].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata %q to be present, got: %v", a2aclient.ClientDataModelKey, lastReceivedMessage.Metadata)
+	}
+	if dataModelMeta["version"] != "v0.9" {
+		t.Errorf("expected version v0.9 in data model meta, got: %v", dataModelMeta["version"])
+	}
+
+	// Verify DataPart had application/a2ui+json MIME type and v0.9 ActionEvent structure
+	var foundA2UIPart bool
+	for _, part := range lastReceivedMessage.Parts {
+		if part.MediaType == a2aclient.A2UIMIMEType {
+			foundA2UIPart = true
+			if dataMap, ok := part.Data().(map[string]any); ok {
+				if actMap, ok := dataMap["action"].(map[string]any); ok {
+					if actMap["name"] != "submit_form" {
+						t.Errorf("expected action name 'submit_form', got %v", actMap["name"])
+					}
+					if actMap["surfaceId"] != "surface-123" {
+						t.Errorf("expected surfaceId 'surface-123', got %v", actMap["surfaceId"])
+					}
+					if actMap["sourceComponentId"] != "btn_submit" {
+						t.Errorf("expected sourceComponentId 'btn_submit', got %v", actMap["sourceComponentId"])
+					}
+					if actMap["timestamp"] == "" {
+						t.Error("expected non-empty timestamp in action payload")
+					}
+				} else {
+					t.Errorf("expected action map in data part, got %v", dataMap)
+				}
+			}
+		}
+	}
+	if !foundA2UIPart {
+		t.Errorf("expected part with MediaType %s in action message", a2aclient.A2UIMIMEType)
+	}
+}
+
 
