@@ -28,10 +28,11 @@ import (
 	tmca2ui "github.com/tmc/a2ui"
 )
 
-// Standard A2UI MIME types for A2A transport.
+// Standard A2UI MIME types and constants for A2A transport.
 const (
 	A2UIMIMEType       = "application/a2ui+json"
 	A2UIMIMETypeLegacy = "application/json+a2ui"
+	A2UIBasicCatalogID = "https://a2ui.org/catalogs/v0.9/basic.json"
 )
 
 // ContentType identifies whether a parsed part is plain text or an interactive A2UI surface.
@@ -158,22 +159,7 @@ func ExtractServerMessages(part *a2a.Part) ([]tmca2ui.ServerMessage, error) {
 		return nil, fmt.Errorf("part carries no data, raw bytes, or text")
 	}
 
-	// 1. Try unmarshaling as a slice of server messages
-	var msgs []tmca2ui.ServerMessage
-	if err := json.Unmarshal(rawJSON, &msgs); err == nil && len(msgs) > 0 {
-		return msgs, nil
-	}
-
-	// 2. Try unmarshaling as a single server message object
-	var single tmca2ui.ServerMessage
-	if err := json.Unmarshal(rawJSON, &single); err == nil {
-		if single.CreateSurface != nil || single.UpdateComponents != nil ||
-			single.UpdateDataModel != nil || single.DeleteSurface != nil {
-			return []tmca2ui.ServerMessage{single}, nil
-		}
-	}
-
-	return nil, fmt.Errorf("could not decode A2UI server messages from payload")
+	return ParseServerMessages(rawJSON)
 }
 
 // surfaceIDFromMessages finds the surface ID targeted by the server messages.

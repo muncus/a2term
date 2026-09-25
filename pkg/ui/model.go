@@ -319,15 +319,68 @@ func (m *Model) AuthFailed() bool {
 	return m.authFailed || m.status == "Auth Failed"
 }
 
+// Layout metrics and sizing defaults
+var (
+	defaultFooterHeight = 2
+	defaultInputHeight  = 3
+	minViewportHeight   = 4
+	minContentWidth     = 4
+	surfaceMarginH      = 8
+	surfaceContainerPad = 4
+	noticePaddingH      = 6
+)
+
 // surfaceInnerWidth computes the available inner width for an A2UI surface inside the surface container box.
 // Outer SurfaceContainer width is (totalWidth - 4). The container has 2 cells border + 2 cells padding = 4 cells chrome,
-// so inner width available to the surface without wrapping is totalWidth - 8.
+// so inner width available to the surface without wrapping is totalWidth - surfaceMarginH.
 func surfaceInnerWidth(totalWidth int) int {
-	w := totalWidth - 8
-	if w < 4 {
-		return 4
+	w := totalWidth - surfaceMarginH
+	if w < minContentWidth {
+		return minContentWidth
 	}
 	return w
+}
+
+// recalculateLayout adjusts viewport dimensions, input prompt width, and active surface sizes.
+func (m *Model) recalculateLayout() {
+	if m.width <= 0 || m.height <= 0 {
+		return
+	}
+
+	headerHeight := lipgloss.Height(m.renderHeader()) + lipgloss.Height(m.renderTabBar())
+	chatVpHeight := m.height - headerHeight - defaultFooterHeight - defaultInputHeight
+	if chatVpHeight < minViewportHeight {
+		chatVpHeight = minViewportHeight
+	}
+
+	fullVpHeight := m.height - headerHeight - defaultFooterHeight
+	if fullVpHeight < minViewportHeight {
+		fullVpHeight = minViewportHeight
+	}
+
+	m.chatViewport.SetWidth(m.width)
+	m.chatViewport.SetHeight(chatVpHeight)
+
+	m.surfacesViewport.SetWidth(m.width)
+	m.surfacesViewport.SetHeight(fullVpHeight)
+
+	m.logsViewport.SetWidth(m.width)
+	m.logsViewport.SetHeight(fullVpHeight)
+
+	inpWidth := m.width - noticePaddingH
+	if inpWidth < minContentWidth {
+		inpWidth = minContentWidth
+	}
+	m.input.SetWidth(inpWidth)
+
+	surfWidth := surfaceInnerWidth(m.width)
+	for _, item := range m.items {
+		if item.Surface != nil {
+			item.Surface.SetSize(surfWidth, fullVpHeight)
+		}
+	}
+
+	m.syncActiveViewportMirror()
 }
 
 // ActiveTab returns the current active tab.

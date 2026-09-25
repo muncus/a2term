@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/muncus/a2term/pkg/a2ui"
 )
 
 // wrapA2UI wraps raw JSON components in an A2UI v0.9 updateComponents message and <a2ui-json> tags.
@@ -544,7 +545,7 @@ func actionResultCard(actionName string, sourceID string, ctxValues map[string]a
 }
 
 // A2UIMIMEType is the standard MIME type for A2UI payloads.
-const A2UIMIMEType = "application/a2ui+json"
+const A2UIMIMEType = a2ui.A2UIMIMEType
 
 // multipartCardComponents returns the A2UI components for the multi-part demo surface.
 func multipartCardComponents() []map[string]any {

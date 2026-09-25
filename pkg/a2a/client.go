@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
 
+	"github.com/muncus/a2term/pkg/a2ui"
 	"github.com/muncus/a2term/pkg/agent"
 )
 
@@ -36,15 +37,15 @@ var _ agent.Client = (*Client)(nil)
 
 const (
 	// A2UIMIMEType is the standard A2UI MIME type (v0.9.1+).
-	A2UIMIMEType = "application/a2ui+json"
+	A2UIMIMEType = a2ui.A2UIMIMEType
 	// A2UIMIMETypeLegacy is the legacy A2UI MIME type (v0.9).
-	A2UIMIMETypeLegacy = "application/json+a2ui"
+	A2UIMIMETypeLegacy = a2ui.A2UIMIMETypeLegacy
 	// ClientCapabilitiesKey is the A2A message metadata key for A2UI capabilities.
 	ClientCapabilitiesKey = "a2uiClientCapabilities"
 	// ClientDataModelKey is the A2A message metadata key for A2UI client data model.
 	ClientDataModelKey = "a2uiClientDataModel"
 	// A2UIBasicCatalogID is the canonical v0.9 basic component catalog URI.
-	A2UIBasicCatalogID = "https://a2ui.org/catalogs/v0.9/basic.json"
+	A2UIBasicCatalogID = a2ui.A2UIBasicCatalogID
 )
 
 // DefaultClientCapabilities returns the standardized A2UI v0.9.1 client capabilities map.
@@ -68,18 +69,7 @@ func applyClientCapabilities(msg *a2a.Message) {
 
 // IsA2UIPart reports whether a part carries A2UI content based on MIME type or metadata.
 func IsA2UIPart(part *a2a.Part) bool {
-	if part == nil {
-		return false
-	}
-	if part.MediaType == A2UIMIMEType || part.MediaType == A2UIMIMETypeLegacy {
-		return true
-	}
-	if part.Metadata != nil {
-		if mt, ok := part.Metadata["mimeType"].(string); ok && (mt == A2UIMIMEType || mt == A2UIMIMETypeLegacy) {
-			return true
-		}
-	}
-	return false
+	return a2ui.IsA2UIPart(part)
 }
 
 // Client wraps an A2A client instance and manages conversation state.
