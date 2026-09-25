@@ -139,3 +139,13 @@ func (m *Model) ItemsForTest() []FeedItem {
 func (m *Model) RenderFeedItemForTest(i int, item FeedItem) string {
 	return m.renderChatFeedItem(i, item)
 }
+
+// Status returns the current status string for testing.
+func (m Model) Status() string {
+	return m.status
+}
+
+// IsLoading returns the loading state for testing.
+func (m Model) IsLoading() bool {
+	return m.isLoading
+}

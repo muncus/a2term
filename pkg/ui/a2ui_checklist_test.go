@@ -368,5 +368,16 @@ func TestA2UI_Checklist_OpenURLClientAction(t *testing.T) {
 	if !strings.Contains(viewContent, "Opened URL: https://a2ui.org/docs") {
 		t.Errorf("expected view to contain 'Opened URL: https://a2ui.org/docs', got:\n%s", viewContent)
 	}
+
+	// 4. Verify local client action does NOT set "Sending action..." status or isLoading
+	if m.IsLoading() {
+		t.Errorf("expected isLoading to be false for local client action, got true")
+	}
+	if m.Status() == "Sending action..." {
+		t.Errorf("expected status not to be 'Sending action...' for local client action, got %q", m.Status())
+	}
+	if strings.Contains(viewContent, "Sending action...") {
+		t.Errorf("expected view not to contain 'Sending action...', got:\n%s", viewContent)
+	}
 }
 

@@ -210,18 +210,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					_ = openBrowserFunc(targetURL)
 					return nil
 				}
-				return m.handleUIAction(fmt.Sprintf("🔗 %s", summary), openCmd)
+				return m.handleLocalUIAction(fmt.Sprintf("🔗 %s", summary), openCmd)
 			}
 		}
 		return m, nil
 
 	case event.InputSubmitted:
 		summary := fmt.Sprintf("Submitted text for %s: %q", msg.Source.ComponentID, msg.Value)
-		return (&m).handleUIAction(summary, nil)
+		return (&m).handleLocalUIAction(summary, nil)
 
 	case event.ChoiceSelected:
 		summary := fmt.Sprintf("Choice selected for %s: %v", msg.Source.ComponentID, msg.Values)
-		return (&m).handleUIAction(summary, nil)
+		return (&m).handleLocalUIAction(summary, nil)
 
 	// Mouse events for click-to-focus and scrolling
 	case tea.MouseClickMsg:
@@ -917,6 +917,31 @@ func (m *Model) handleUIAction(summary string, sendCmd tea.Cmd) (tea.Model, tea.
 			m.logsViewport.GotoBottom()
 			m.syncActiveViewportMirror()
 		}
+	}
+	return *m, tea.Batch(cmds...)
+}
+
+func (m *Model) handleLocalUIAction(summary string, localCmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.items = append(m.items, NewActionItem(uuid.NewString(), summary))
+	m.toast = summary
+	// Local actions do not wait for agent response, so do not set "Sending action..." status
+	m.isLoading = false
+	if m.status == "Sending action..." {
+		if m.client != nil {
+			m.status = "Connected"
+		} else {
+			m.status = "Ready"
+		}
+	}
+	m.updateViewportContent()
+	m.chatViewport.GotoBottom()
+	m.logsViewport.GotoBottom()
+	m.syncActiveViewportMirror()
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, m.clearToastAfter(3*time.Second))
+	if localCmd != nil {
+		cmds = append(cmds, localCmd)
 	}
 	return *m, tea.Batch(cmds...)
 }
