@@ -160,87 +160,58 @@ func (m *Model) appendAgentResponseParts(parts []*a2a.Part) {
 		return
 	}
 
-	// When dispatcher is active, avoid duplicate a2tea.Render by directly extracting and dispatching
-	if m.dispatcher != nil {
-		hasA2UI := false
-		for _, part := range parts {
-			if a2ui.IsA2UIPart(part) {
-				hasA2UI = true
-				if msgs, err := a2ui.ExtractServerMessages(part); err == nil && len(msgs) > 0 {
-					m.processServerMessages(msgs)
-				}
-			} else {
-				// Non-A2UI part: parse text or media
-				segments, err := a2ui.ParseAgentParts([]*a2a.Part{part}, render.WithStyles(a2ui.DefaultTerminalStyles()))
-				if err != nil || len(segments) == 0 {
-					text := a2aclient.ExtractPartsText([]*a2a.Part{part})
-					if strings.TrimSpace(text) != "" {
-						m.items = append(m.items, NewAgentTextItem(uuid.NewString(), text))
-					}
-					continue
-				}
-				for _, seg := range segments {
-					if seg.Type == a2ui.TypeText {
-						msgs, prose := a2ui.ExtractMessagesAndText(seg.Text)
-						if len(msgs) > 0 {
-							m.processServerMessages(msgs)
-						}
-						if prose != "" {
-							m.items = append(m.items, NewAgentTextItem(uuid.NewString(), prose))
-						} else if len(msgs) == 0 {
-							m.items = append(m.items, NewAgentTextItem(uuid.NewString(), seg.Text))
-						}
-					}
-				}
-			}
+	for _, part := range parts {
+		if part == nil {
+			continue
 		}
-		if hasA2UI {
-			return
-		}
-	}
 
-	// Fallback when no dispatcher is configured
-	segments, err := a2ui.ParseAgentParts(parts, render.WithStyles(a2ui.DefaultTerminalStyles()))
-	if err != nil || len(segments) == 0 {
-		text := a2aclient.ExtractPartsText(parts)
-		if strings.TrimSpace(text) != "" {
-			m.items = append(m.items, NewAgentTextItem(uuid.NewString(), text))
-		}
-		return
-	}
-
-	for _, seg := range segments {
-		switch seg.Type {
-		case a2ui.TypeSurface:
-			if m.dispatcher != nil && len(seg.Messages) > 0 {
-				m.processServerMessages(seg.Messages)
-			} else {
-				if m.ready && seg.Surface != nil {
-					seg.Surface.SetSize(surfaceInnerWidth(m.width), m.surfacesViewport.Height())
-				}
-				surfID := seg.SurfaceID
-				if surfID == "" {
-					surfID = "surface"
-				}
-				m.items = append(m.items, NewAgentSurfaceItem(uuid.NewString(), surfID, seg.Surface, seg.Messages))
-			}
-		case a2ui.TypeText:
-			msgs, prose := a2ui.ExtractMessagesAndText(seg.Text)
-			if len(msgs) > 0 {
+		// 1. A2UI DataPart (standard transport application/a2ui+json)
+		if a2ui.IsA2UIPart(part) {
+			if msgs, err := a2ui.ExtractServerMessages(part); err == nil && len(msgs) > 0 {
 				m.processServerMessages(msgs)
 			}
-			if prose != "" {
-				m.items = append(m.items, NewAgentTextItem(uuid.NewString(), prose))
-			} else if len(msgs) == 0 {
-				m.items = append(m.items, NewAgentTextItem(uuid.NewString(), seg.Text))
+			continue
+		}
+
+		// 2. Multimodal raw data (e.g. image)
+		if r := part.Raw(); len(r) > 0 && part.Text() == "" {
+			label := fmt.Sprintf("[Binary data: %s (%d bytes)]", part.MediaType, len(r))
+			if strings.HasPrefix(part.MediaType, "image/") {
+				name := part.Filename
+				if name == "" {
+					name = "image"
+				}
+				label = fmt.Sprintf("[🖼️ Image: %s (%s, %d bytes)]", name, part.MediaType, len(r))
 			}
+			m.items = append(m.items, NewAgentTextItem(uuid.NewString(), label))
+			continue
+		}
+
+		// 3. Text part: check for embedded A2UI server messages or conversational prose
+		text := part.Text()
+		if text == "" {
+			text = a2aclient.ExtractPartsText([]*a2a.Part{part})
+		}
+		if text == "" {
+			continue
+		}
+
+		msgs, prose := a2ui.ExtractMessagesAndText(text)
+		if len(msgs) > 0 {
+			m.processServerMessages(msgs)
+		}
+		if prose != "" {
+			m.items = append(m.items, NewAgentTextItem(uuid.NewString(), prose))
 		}
 	}
 }
 
 func (m *Model) processServerMessages(msgs []tmca2ui.ServerMessage) {
 	if m.dispatcher == nil {
-		return
+		if m.surfaceManager == nil {
+			m.surfaceManager = a2ui.NewSurfaceManager()
+		}
+		m.dispatcher = a2ui.NewDispatcher(m.surfaceManager, render.WithStyles(a2ui.DefaultTerminalStyles()))
 	}
 	results, err := m.dispatcher.DispatchBatch(msgs)
 	if err != nil {

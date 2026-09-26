@@ -176,6 +176,17 @@ func TestModelPlainTextResponses(t *testing.T) {
 	if !strings.Contains(view.Content, "Terminal-native") {
 		t.Errorf("expected bullet list in view, got %q", view.Content)
 	}
+
+	model := updated.(ui.Model)
+	textCount := 0
+	for _, it := range model.Items() {
+		if it.Kind == ui.KindAgentText && it.Content == plainText {
+			textCount++
+		}
+	}
+	if textCount != 1 {
+		t.Errorf("expected text item to be appended exactly once, got %d", textCount)
+	}
 }
 
 func TestModelStreamingPlainText(t *testing.T) {
