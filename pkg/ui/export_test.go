@@ -14,13 +14,21 @@
 
 package ui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+)
 
 // Export internal messages and inspectors for testing in ui_test package
 
 // NewAgentResponseMsgForTest creates an agentResponseMsg for tests.
 func NewAgentResponseMsgForTest(text string) tea.Msg {
-	return agentResponseMsg{text: text}
+	return agentResponseMsg{parts: []*a2a.Part{a2a.NewTextPart(text)}}
+}
+
+// NewAgentResponsePartsMsgForTest creates an agentResponseMsg with parts for tests.
+func NewAgentResponsePartsMsgForTest(parts []*a2a.Part) tea.Msg {
+	return agentResponseMsg{parts: parts}
 }
 
 // NewAgentStreamChunkMsgForTest creates an agentStreamChunkMsg for tests.
@@ -68,6 +76,26 @@ func (m Model) AuthToken() string {
 	return m.authToken
 }
 
+// Items returns the list of feed items for testing.
+func (m Model) Items() []FeedItem {
+	return m.items
+}
+
+// ChatViewportYOffset returns the YOffset of the chat viewport.
+func (m Model) ChatViewportYOffset() int {
+	return m.chatViewport.YOffset()
+}
+
+// SurfacesViewportYOffset returns the YOffset of the surfaces viewport.
+func (m Model) SurfacesViewportYOffset() int {
+	return m.surfacesViewport.YOffset()
+}
+
+// LogsViewportYOffset returns the YOffset of the logs viewport.
+func (m Model) LogsViewportYOffset() int {
+	return m.logsViewport.YOffset()
+}
+
 // SetOpenBrowserFuncForTest overrides openBrowserFunc for testing and returns a cleanup func.
 func SetOpenBrowserFuncForTest(fn func(string) error) func() {
 	orig := openBrowserFunc
@@ -109,6 +137,15 @@ func (m *Model) ItemsForTest() []FeedItem {
 
 // RenderFeedItemForTest returns rendered feed item.
 func (m *Model) RenderFeedItemForTest(i int, item FeedItem) string {
-	return m.renderFeedItem(i, item)
+	return m.renderChatFeedItem(i, item)
 }
 
+// Status returns the current status string for testing.
+func (m Model) Status() string {
+	return m.status
+}
+
+// IsLoading returns the loading state for testing.
+func (m Model) IsLoading() bool {
+	return m.isLoading
+}

@@ -112,8 +112,8 @@ func TestExampleServiceEndToEndJSONRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
-	if !strings.Contains(resp, "Button Gallery") {
-		t.Errorf("expected response to contain 'Button Gallery', got: %q", resp)
+	if !strings.Contains(a2aclient.ExtractPartsText(resp), "Button Gallery") {
+		t.Errorf("expected response to contain 'Button Gallery', got: %q", a2aclient.ExtractPartsText(resp))
 	}
 
 	// 2. Send action event
@@ -121,8 +121,8 @@ func TestExampleServiceEndToEndJSONRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendActionEvent failed: %v", err)
 	}
-	if !strings.Contains(actionResp, "approve_request") {
-		t.Errorf("expected action response to contain 'approve_request', got: %q", actionResp)
+	if !strings.Contains(a2aclient.ExtractPartsText(actionResp), "approve_request") {
+		t.Errorf("expected action response to contain 'approve_request', got: %q", a2aclient.ExtractPartsText(actionResp))
 	}
 
 	// 3. Send prompt for showcase
@@ -130,7 +130,61 @@ func TestExampleServiceEndToEndJSONRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage for showcase failed: %v", err)
 	}
-	if !strings.Contains(showcaseResp, "A2UI Interactive Component Showcase") {
-		t.Errorf("expected showcase response, got: %q", showcaseResp)
+	if !strings.Contains(a2aclient.ExtractPartsText(showcaseResp), "A2UI Interactive Component Showcase") {
+		t.Errorf("expected showcase response, got: %q", a2aclient.ExtractPartsText(showcaseResp))
+	}
+
+	// 4. Send prompt for multipart
+	multiResp, err := client.SendMessage(ctx, "multipart")
+	if err != nil {
+		t.Fatalf("SendMessage for multipart failed: %v", err)
+	}
+	if len(multiResp) != 2 {
+		t.Fatalf("expected 2 parts from multipart command, got %d", len(multiResp))
+	}
+	segs, err := a2ui.ParseAgentParts(multiResp)
+	if err != nil {
+		t.Fatalf("ParseAgentParts on multipart response failed: %v", err)
+	}
+	if len(segs) != 2 {
+		t.Fatalf("expected 2 parsed segments, got %d", len(segs))
+	}
+	if segs[0].Type != a2ui.TypeText || segs[1].Type != a2ui.TypeSurface {
+		t.Errorf("unexpected segment types: seg0=%v, seg1=%v", segs[0].Type, segs[1].Type)
 	}
 }
+
+func TestMultipartResponse(t *testing.T) {
+	msg := multipartMessage()
+	if msg == nil {
+		t.Fatal("expected non-nil multipart message")
+	}
+	if len(msg.Parts) != 2 {
+		t.Fatalf("expected 2 parts in multipart response, got %d", len(msg.Parts))
+	}
+
+	// Part 0: Text part
+	textPart := msg.Parts[0]
+	if textPart.Text() == "" {
+		t.Error("expected non-empty text part")
+	}
+
+	// Part 1: A2UI DataPart with application/a2ui+json
+	uiPart := msg.Parts[1]
+	if uiPart.MediaType != A2UIMIMEType {
+		t.Errorf("expected MediaType %q, got %q", A2UIMIMEType, uiPart.MediaType)
+	}
+	if mime, ok := uiPart.Metadata["mimeType"].(string); !ok || mime != A2UIMIMEType {
+		t.Errorf("expected metadata mimeType %q, got %v", A2UIMIMEType, uiPart.Metadata["mimeType"])
+	}
+	if uiPart.Data() == nil {
+		t.Fatal("expected non-nil Data in uiPart")
+	}
+
+	// Verify also via multipartCard alias
+	cardMsg := multipartCard()
+	if cardMsg == nil || len(cardMsg.Parts) != 2 {
+		t.Errorf("expected multipartCard to return valid 2-part message")
+	}
+}
+

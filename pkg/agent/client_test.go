@@ -18,6 +18,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/muncus/a2term/pkg/agent"
 )
 
@@ -43,22 +44,22 @@ func (m *mockClient) ResetSession() {
 	m.session = agent.SessionInfo{}
 }
 
-func (m *mockClient) SendMessage(ctx context.Context, text string) (string, error) {
-	return "response to: " + text, nil
+func (m *mockClient) SendMessage(ctx context.Context, text string) ([]*a2a.Part, error) {
+	return []*a2a.Part{a2a.NewTextPart("response to: " + text)}, nil
 }
 
-func (m *mockClient) StreamMessage(ctx context.Context, text string, onChunk func(chunk string, isFinal bool, err error)) error {
-	onChunk("chunk1", false, nil)
-	onChunk("chunk2", true, nil)
+func (m *mockClient) StreamMessage(ctx context.Context, text string, onChunk func(parts []*a2a.Part, isFinal bool, err error)) error {
+	onChunk([]*a2a.Part{a2a.NewTextPart("chunk1")}, false, nil)
+	onChunk([]*a2a.Part{a2a.NewTextPart("chunk2")}, true, nil)
 	return nil
 }
 
-func (m *mockClient) SendActionEvent(ctx context.Context, actionName string, sourceID string, contextValues map[string]any) (string, error) {
-	return "action response: " + actionName, nil
+func (m *mockClient) SendActionEvent(ctx context.Context, actionName string, sourceID string, contextValues map[string]any) ([]*a2a.Part, error) {
+	return []*a2a.Part{a2a.NewTextPart("action response: " + actionName)}, nil
 }
 
-func (m *mockClient) SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) (string, error) {
-	return "action response: " + actionName, nil
+func (m *mockClient) SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) ([]*a2a.Part, error) {
+	return []*a2a.Part{a2a.NewTextPart("action response: " + actionName)}, nil
 }
 
 
@@ -81,14 +82,14 @@ func TestClientInterface(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	resp, err := cli.SendMessage(ctx, "hello")
-	if err != nil || resp != "response to: hello" {
-		t.Errorf("SendMessage() = %q, %v; want %q, nil", resp, err, "response to: hello")
+	parts, err := cli.SendMessage(ctx, "hello")
+	if err != nil || len(parts) == 0 || parts[0].Text() != "response to: hello" {
+		t.Errorf("SendMessage() = %v, %v; want 'response to: hello'", parts, err)
 	}
 
-	actResp, err := cli.SendActionEvent(ctx, "click", "btn1", nil)
-	if err != nil || actResp != "action response: click" {
-		t.Errorf("SendActionEvent() = %q, %v; want %q, nil", actResp, err, "action response: click")
+	actParts, err := cli.SendActionEvent(ctx, "click", "btn1", nil)
+	if err != nil || len(actParts) == 0 || actParts[0].Text() != "action response: click" {
+		t.Errorf("SendActionEvent() = %v, %v; want 'action response: click'", actParts, err)
 	}
 
 	cli.ResetSession()

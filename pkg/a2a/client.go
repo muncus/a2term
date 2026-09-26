@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
 
+	"github.com/muncus/a2term/pkg/a2ui"
 	"github.com/muncus/a2term/pkg/agent"
 )
 
@@ -36,15 +37,15 @@ var _ agent.Client = (*Client)(nil)
 
 const (
 	// A2UIMIMEType is the standard A2UI MIME type (v0.9.1+).
-	A2UIMIMEType = "application/a2ui+json"
+	A2UIMIMEType = a2ui.A2UIMIMEType
 	// A2UIMIMETypeLegacy is the legacy A2UI MIME type (v0.9).
-	A2UIMIMETypeLegacy = "application/json+a2ui"
+	A2UIMIMETypeLegacy = a2ui.A2UIMIMETypeLegacy
 	// ClientCapabilitiesKey is the A2A message metadata key for A2UI capabilities.
 	ClientCapabilitiesKey = "a2uiClientCapabilities"
 	// ClientDataModelKey is the A2A message metadata key for A2UI client data model.
 	ClientDataModelKey = "a2uiClientDataModel"
 	// A2UIBasicCatalogID is the canonical v0.9 basic component catalog URI.
-	A2UIBasicCatalogID = "https://a2ui.org/catalogs/v0.9/basic.json"
+	A2UIBasicCatalogID = a2ui.A2UIBasicCatalogID
 )
 
 // DefaultClientCapabilities returns the standardized A2UI v0.9.1 client capabilities map.
@@ -68,20 +69,8 @@ func applyClientCapabilities(msg *a2a.Message) {
 
 // IsA2UIPart reports whether a part carries A2UI content based on MIME type or metadata.
 func IsA2UIPart(part *a2a.Part) bool {
-	if part == nil {
-		return false
-	}
-	if part.MediaType == A2UIMIMEType || part.MediaType == A2UIMIMETypeLegacy {
-		return true
-	}
-	if part.Metadata != nil {
-		if mt, ok := part.Metadata["mimeType"].(string); ok && (mt == A2UIMIMEType || mt == A2UIMIMETypeLegacy) {
-			return true
-		}
-	}
-	return false
+	return a2ui.IsA2UIPart(part)
 }
-
 
 // Client wraps an A2A client instance and manages conversation state.
 type Client struct {
@@ -317,12 +306,12 @@ func (c *Client) ResetSession() {
 	c.contextID = ""
 }
 
-// SendMessage sends a user message and returns the response text (including any embedded A2UI tags).
-func (c *Client) SendMessage(ctx context.Context, text string) (string, error) {
+// SendMessage sends a user message and returns the response parts.
+func (c *Client) SendMessage(ctx context.Context, text string) ([]*a2a.Part, error) {
 	c.mu.Lock()
 	if c.client == nil {
 		c.mu.Unlock()
-		return "", errors.New("client not connected")
+		return nil, errors.New("client not connected")
 	}
 
 	taskInfo := a2a.TaskInfo{
@@ -340,23 +329,23 @@ func (c *Client) SendMessage(ctx context.Context, text string) (string, error) {
 
 	result, err := client.SendMessage(ctx, req)
 	if err != nil {
-		return "", wrapAuthError(err)
+		return nil, wrapAuthError(err)
 	}
 
-	return c.processResult(result)
+	return c.processResultParts(result)
 }
 
 // SendActionEvent sends an interaction event (such as a button click or form submission) back to the agent.
-func (c *Client) SendActionEvent(ctx context.Context, actionName string, sourceID string, contextValues map[string]any) (string, error) {
+func (c *Client) SendActionEvent(ctx context.Context, actionName string, sourceID string, contextValues map[string]any) ([]*a2a.Part, error) {
 	return c.SendA2UIAction(ctx, actionName, "", sourceID, contextValues, nil)
 }
 
 // SendA2UIAction sends a full A2UI interaction event with optional surfaceID and client data model.
-func (c *Client) SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) (string, error) {
+func (c *Client) SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) ([]*a2a.Part, error) {
 	c.mu.Lock()
 	if c.client == nil {
 		c.mu.Unlock()
-		return "", errors.New("client not connected")
+		return nil, errors.New("client not connected")
 	}
 
 	taskInfo := a2a.TaskInfo{
@@ -408,14 +397,14 @@ func (c *Client) SendA2UIAction(ctx context.Context, actionName string, surfaceI
 
 	result, err := client.SendMessage(ctx, req)
 	if err != nil {
-		return "", wrapAuthError(err)
+		return nil, wrapAuthError(err)
 	}
 
-	return c.processResult(result)
+	return c.processResultParts(result)
 }
 
-// StreamMessage sends a message and yields streaming events as they arrive.
-func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(chunk string, isFinal bool, err error)) error {
+// StreamMessage sends a message and yields streaming parts/events as they arrive.
+func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(parts []*a2a.Part, isFinal bool, err error)) error {
 	c.mu.Lock()
 	if c.client == nil {
 		c.mu.Unlock()
@@ -435,12 +424,10 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 	client := c.client
 	c.mu.Unlock()
 
-
-	var accumulated strings.Builder
 	for event, err := range client.SendStreamingMessage(ctx, req) {
 		if err != nil {
 			wrappedErr := wrapAuthError(err)
-			onChunk("", true, wrappedErr)
+			onChunk(nil, true, wrappedErr)
 			return wrappedErr
 		}
 
@@ -463,10 +450,8 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 
 		switch ev := event.(type) {
 		case *a2a.Message:
-			text := ExtractText(ev)
-			if text != "" {
-				accumulated.WriteString(text)
-				onChunk(accumulated.String(), false, nil)
+			if len(ev.Parts) > 0 {
+				onChunk(ev.Parts, false, nil)
 			}
 		case *a2a.TaskStatusUpdateEvent:
 			isFinal := ev.Status.State.Terminal()
@@ -475,24 +460,17 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 				c.taskID = ""
 				c.mu.Unlock()
 			}
-			if ev.Status.Message != nil {
-				text := ExtractText(ev.Status.Message)
-				if text != "" {
-					accumulated.WriteString(text)
-					onChunk(accumulated.String(), isFinal, nil)
-				}
+			if ev.Status.Message != nil && len(ev.Status.Message.Parts) > 0 {
+				onChunk(ev.Status.Message.Parts, isFinal, nil)
+			} else if isFinal {
+				onChunk(nil, true, nil)
 			}
 			if isFinal {
-				onChunk(accumulated.String(), true, nil)
 				return nil
 			}
 		case *a2a.TaskArtifactUpdateEvent:
-			if ev.Artifact != nil {
-				text := ExtractArtifactText(ev.Artifact)
-				if text != "" {
-					accumulated.WriteString(text)
-					onChunk(accumulated.String(), ev.LastChunk, nil)
-				}
+			if ev.Artifact != nil && len(ev.Artifact.Parts) > 0 {
+				onChunk(ev.Artifact.Parts, ev.LastChunk, nil)
 			}
 		case *a2a.Task:
 			isTerminal := ev.Status.State.Terminal()
@@ -501,44 +479,45 @@ func (c *Client) StreamMessage(ctx context.Context, text string, onChunk func(ch
 				c.taskID = ""
 				c.mu.Unlock()
 			}
-			var text string
-			if ev.Status.Message != nil {
-				text = ExtractText(ev.Status.Message)
-			}
-			if text == "" && len(ev.Artifacts) > 0 {
-				var sb strings.Builder
+			var parts []*a2a.Part
+			if ev.Status.Message != nil && len(ev.Status.Message.Parts) > 0 {
+				parts = ev.Status.Message.Parts
+			} else if len(ev.Artifacts) > 0 {
 				for _, art := range ev.Artifacts {
-					sb.WriteString(ExtractArtifactText(art))
+					parts = append(parts, art.Parts...)
 				}
-				text = sb.String()
-			}
-			if text == "" && len(ev.History) > 0 {
+			} else if len(ev.History) > 0 {
 				for i := len(ev.History) - 1; i >= 0; i-- {
-					if ev.History[i].Role == a2a.MessageRoleAgent {
-						text = ExtractText(ev.History[i])
-						if text != "" {
-							break
-						}
+					if ev.History[i].Role == a2a.MessageRoleAgent && len(ev.History[i].Parts) > 0 {
+						parts = ev.History[i].Parts
+						break
 					}
 				}
 			}
-			if text != "" {
-				accumulated.WriteString(text)
+			if len(parts) > 0 {
+				onChunk(parts, isTerminal, nil)
 			}
-			onChunk(accumulated.String(), isTerminal, nil)
 			if isTerminal {
 				return nil
 			}
 		}
 	}
 
-	onChunk(accumulated.String(), true, nil)
+	onChunk(nil, true, nil)
 	return nil
 }
 
 func (c *Client) processResult(result a2a.SendMessageResult) (string, error) {
+	parts, err := c.processResultParts(result)
+	if err != nil {
+		return "", err
+	}
+	return ExtractPartsText(parts), nil
+}
+
+func (c *Client) processResultParts(result a2a.SendMessageResult) ([]*a2a.Part, error) {
 	if result == nil {
-		return "", nil
+		return nil, nil
 	}
 
 	info := result.TaskInfo()
@@ -553,7 +532,7 @@ func (c *Client) processResult(result a2a.SendMessageResult) (string, error) {
 
 	switch r := result.(type) {
 	case *a2a.Message:
-		return ExtractText(r), nil
+		return r.Parts, nil
 	case *a2a.Task:
 		if r.Status.State.Terminal() {
 			c.mu.Lock()
@@ -562,21 +541,18 @@ func (c *Client) processResult(result a2a.SendMessageResult) (string, error) {
 		}
 
 		// 1. Check Status.Message
-		if r.Status.Message != nil {
-			txt := ExtractText(r.Status.Message)
-			if txt != "" {
-				return txt, nil
-			}
+		if r.Status.Message != nil && len(r.Status.Message.Parts) > 0 {
+			return r.Status.Message.Parts, nil
 		}
 
 		// 2. Check Artifacts (common pattern for ADK and generative agents)
 		if len(r.Artifacts) > 0 {
-			var sb strings.Builder
+			var parts []*a2a.Part
 			for _, art := range r.Artifacts {
-				sb.WriteString(ExtractArtifactText(art))
+				parts = append(parts, art.Parts...)
 			}
-			if txt := sb.String(); txt != "" {
-				return txt, nil
+			if len(parts) > 0 {
+				return parts, nil
 			}
 		}
 
@@ -584,14 +560,14 @@ func (c *Client) processResult(result a2a.SendMessageResult) (string, error) {
 		if len(r.History) > 0 {
 			// Find latest agent message in history
 			for i := len(r.History) - 1; i >= 0; i-- {
-				if r.History[i].Role == a2a.MessageRoleAgent {
-					return ExtractText(r.History[i]), nil
+				if r.History[i].Role == a2a.MessageRoleAgent && len(r.History[i].Parts) > 0 {
+					return r.History[i].Parts, nil
 				}
 			}
 		}
-		return fmt.Sprintf("Task %s: %s", r.ID, r.Status.State), nil
+		return []*a2a.Part{a2a.NewTextPart(fmt.Sprintf("Task %s: %s", r.ID, r.Status.State))}, nil
 	default:
-		return fmt.Sprintf("%v", result), nil
+		return []*a2a.Part{a2a.NewTextPart(fmt.Sprintf("%v", result))}, nil
 	}
 }
 
@@ -600,7 +576,7 @@ func ExtractArtifactText(art *a2a.Artifact) string {
 	if art == nil {
 		return ""
 	}
-	return extractPartsText(art.Parts)
+	return ExtractPartsText(art.Parts)
 }
 
 // ExtractText retrieves all text content from an A2A Message.
@@ -608,11 +584,11 @@ func ExtractText(msg *a2a.Message) string {
 	if msg == nil {
 		return ""
 	}
-	return extractPartsText(msg.Parts)
+	return ExtractPartsText(msg.Parts)
 }
 
-// extractPartsText iterates through a slice of A2A Parts and concatenates all text/raw/url/data representations.
-func extractPartsText(parts a2a.ContentParts) string {
+// ExtractPartsText iterates through a slice of A2A Parts and concatenates all text/raw/url/data representations.
+func ExtractPartsText(parts []*a2a.Part) string {
 	var sb strings.Builder
 	for _, part := range parts {
 		if part == nil {
@@ -677,5 +653,3 @@ func extractPartRawOrData(part *a2a.Part) string {
 	}
 	return ""
 }
-
-

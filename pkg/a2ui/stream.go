@@ -16,7 +16,9 @@ package a2ui
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 
@@ -35,46 +37,25 @@ type StreamEvent struct {
 	IsA2UI   bool
 }
 
-// ParseLineAsServerMessage attempts to decode a single line as an A2UI ServerMessage.
-func ParseLineAsServerMessage(line string) (*tmca2ui.ServerMessage, bool) {
-	trimmed := strings.TrimSpace(line)
-	if !strings.HasPrefix(trimmed, "{") || !strings.HasSuffix(trimmed, "}") {
-		return nil, false
-	}
-
-	var msg tmca2ui.ServerMessage
-	if err := json.Unmarshal([]byte(trimmed), &msg); err == nil {
-		if msg.CreateSurface != nil || msg.UpdateComponents != nil || msg.UpdateDataModel != nil || msg.DeleteSurface != nil {
-			return &msg, true
-		}
-	}
-	return nil, false
+// isServerMessage reports whether a decoded ServerMessage contains an active mutation payload.
+func isServerMessage(m *tmca2ui.ServerMessage) bool {
+	return m != nil && (m.CreateSurface != nil || m.UpdateComponents != nil || m.UpdateDataModel != nil || m.DeleteSurface != nil)
 }
 
-// ParseServerMessagesFromJSON attempts to decode a JSON string as either a single ServerMessage or a slice of ServerMessages.
-func ParseServerMessagesFromJSON(rawJSON string) ([]tmca2ui.ServerMessage, error) {
-	trimmed := strings.TrimSpace(rawJSON)
-	if trimmed == "" {
+// ParseServerMessages attempts to decode raw JSON as either a single ServerMessage or a slice of ServerMessages.
+func ParseServerMessages(raw []byte) ([]tmca2ui.ServerMessage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
 		return nil, nil
 	}
 
-	// Try single message
-	if strings.HasPrefix(trimmed, "{") {
-		var single tmca2ui.ServerMessage
-		if err := json.Unmarshal([]byte(trimmed), &single); err == nil {
-			if single.CreateSurface != nil || single.UpdateComponents != nil || single.UpdateDataModel != nil || single.DeleteSurface != nil {
-				return []tmca2ui.ServerMessage{single}, nil
-			}
-		}
-	}
-
-	// Try array of messages
-	if strings.HasPrefix(trimmed, "[") {
+	// 1. Array of messages
+	if trimmed[0] == '[' {
 		var list []tmca2ui.ServerMessage
-		if err := json.Unmarshal([]byte(trimmed), &list); err == nil {
+		if err := json.Unmarshal(trimmed, &list); err == nil {
 			var valid []tmca2ui.ServerMessage
 			for _, m := range list {
-				if m.CreateSurface != nil || m.UpdateComponents != nil || m.UpdateDataModel != nil || m.DeleteSurface != nil {
+				if isServerMessage(&m) {
 					valid = append(valid, m)
 				}
 			}
@@ -84,7 +65,15 @@ func ParseServerMessagesFromJSON(rawJSON string) ([]tmca2ui.ServerMessage, error
 		}
 	}
 
-	return nil, nil
+	// 2. Single message
+	if trimmed[0] == '{' {
+		var single tmca2ui.ServerMessage
+		if err := json.Unmarshal(trimmed, &single); err == nil && isServerMessage(&single) {
+			return []tmca2ui.ServerMessage{single}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not decode A2UI server messages from payload")
 }
 
 // ExtractMessagesAndText extracts all A2UI ServerMessages and conversational prose text from content.
@@ -114,7 +103,7 @@ func ExtractMessagesAndText(content string) (messages []tmca2ui.ServerMessage, p
 			closeIdx := strings.Index(remaining, tagClose)
 			if closeIdx < 0 {
 				// Unclosed tag, take the rest as JSON
-				if msgs, err := ParseServerMessagesFromJSON(remaining); err == nil && len(msgs) > 0 {
+				if msgs, err := ParseServerMessages([]byte(remaining)); err == nil && len(msgs) > 0 {
 					messages = append(messages, msgs...)
 				}
 				break
@@ -123,7 +112,7 @@ func ExtractMessagesAndText(content string) (messages []tmca2ui.ServerMessage, p
 			jsonBlock := remaining[:closeIdx]
 			remaining = remaining[closeIdx+len(tagClose):]
 
-			if msgs, err := ParseServerMessagesFromJSON(jsonBlock); err == nil && len(msgs) > 0 {
+			if msgs, err := ParseServerMessages([]byte(jsonBlock)); err == nil && len(msgs) > 0 {
 				messages = append(messages, msgs...)
 			}
 		}
@@ -142,8 +131,8 @@ func ExtractMessagesAndText(content string) (messages []tmca2ui.ServerMessage, p
 			continue
 		}
 
-		if msg, ok := ParseLineAsServerMessage(trimmedLine); ok {
-			messages = append(messages, *msg)
+		if msgs, err := ParseServerMessages([]byte(trimmedLine)); err == nil && len(msgs) == 1 {
+			messages = append(messages, msgs[0])
 			foundAnyMessage = true
 		} else {
 			nonJSONLines = append(nonJSONLines, line)
@@ -155,7 +144,7 @@ func ExtractMessagesAndText(content string) (messages []tmca2ui.ServerMessage, p
 	}
 
 	// 3. Fallback: check if entire block is a JSON message or array
-	if msgs, err := ParseServerMessagesFromJSON(content); err == nil && len(msgs) > 0 {
+	if msgs, err := ParseServerMessages([]byte(content)); err == nil && len(msgs) > 0 {
 		return msgs, ""
 	}
 
@@ -175,9 +164,9 @@ func ReadJSONLStream(r io.Reader) ([]StreamEvent, error) {
 			continue
 		}
 
-		if msg, ok := ParseLineAsServerMessage(trimmed); ok {
+		if msgs, err := ParseServerMessages([]byte(trimmed)); err == nil && len(msgs) == 1 {
 			events = append(events, StreamEvent{
-				Message: msg,
+				Message: &msgs[0],
 				IsA2UI:  true,
 			})
 		} else {

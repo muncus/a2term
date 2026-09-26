@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/joestump-agent/a2tea/event"
 	"github.com/muncus/a2term/pkg/agent"
 	"github.com/muncus/a2term/pkg/ui"
@@ -40,15 +41,17 @@ type a2uiTestClient struct {
 	actions []recordedAction
 }
 
-func (c *a2uiTestClient) SendMessage(ctx context.Context, text string) (string, error) {
-	return "ok", nil
+var _ agent.Client = (*a2uiTestClient)(nil)
+
+func (c *a2uiTestClient) SendMessage(ctx context.Context, text string) ([]*a2a.Part, error) {
+	return []*a2a.Part{a2a.NewTextPart("ok")}, nil
 }
 
-func (c *a2uiTestClient) StreamMessage(ctx context.Context, text string, onChunk func(chunk string, isFinal bool, err error)) error {
+func (c *a2uiTestClient) StreamMessage(ctx context.Context, text string, onChunk func(parts []*a2a.Part, isFinal bool, err error)) error {
 	return nil
 }
 
-func (c *a2uiTestClient) SendActionEvent(ctx context.Context, actionName, sourceID string, contextValues map[string]any) (string, error) {
+func (c *a2uiTestClient) SendActionEvent(ctx context.Context, actionName, sourceID string, contextValues map[string]any) ([]*a2a.Part, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.actions = append(c.actions, recordedAction{
@@ -56,10 +59,10 @@ func (c *a2uiTestClient) SendActionEvent(ctx context.Context, actionName, source
 		SourceID:      sourceID,
 		ContextValues: contextValues,
 	})
-	return "action ok", nil
+	return []*a2a.Part{a2a.NewTextPart("action ok")}, nil
 }
 
-func (c *a2uiTestClient) SendA2UIAction(ctx context.Context, actionName, surfaceID, sourceID string, contextValues map[string]any, clientDataModel map[string]any) (string, error) {
+func (c *a2uiTestClient) SendA2UIAction(ctx context.Context, actionName, surfaceID, sourceID string, contextValues map[string]any, clientDataModel map[string]any) ([]*a2a.Part, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.actions = append(c.actions, recordedAction{
@@ -69,7 +72,7 @@ func (c *a2uiTestClient) SendA2UIAction(ctx context.Context, actionName, surface
 		ContextValues:   contextValues,
 		ClientDataModel: clientDataModel,
 	})
-	return "a2ui action ok", nil
+	return []*a2a.Part{a2a.NewTextPart("a2ui action ok")}, nil
 }
 
 func (c *a2uiTestClient) ResetSession()                          {}
@@ -124,10 +127,18 @@ func TestA2UI_Checklist_MultiSurfaceAndProgressiveStreaming(t *testing.T) {
 		t.Fatal("expected surface to be rendered progressively before isFinal")
 	}
 
+	// Switch to TabSurfaces to check rendered surface content
+	resM, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF2})
+	m = resM.(ui.Model)
+
 	vpView := m.View().Content
 	if !strings.Contains(vpView, "Welcome, Ada Lovelace!") {
 		t.Errorf("expected view to contain resolved 'Welcome, Ada Lovelace!', got:\n%s", vpView)
 	}
+
+	// Switch back to TabChat for conversational outro
+	resM, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+	m = resM.(ui.Model)
 
 	// 4. Stream final chunk with conversational outro
 	chunkFinal := `Here is your card.`
@@ -356,6 +367,17 @@ func TestA2UI_Checklist_OpenURLClientAction(t *testing.T) {
 	viewContent := m.View().Content
 	if !strings.Contains(viewContent, "Opened URL: https://a2ui.org/docs") {
 		t.Errorf("expected view to contain 'Opened URL: https://a2ui.org/docs', got:\n%s", viewContent)
+	}
+
+	// 4. Verify local client action does NOT set "Sending action..." status or isLoading
+	if m.IsLoading() {
+		t.Errorf("expected isLoading to be false for local client action, got true")
+	}
+	if m.Status() == "Sending action..." {
+		t.Errorf("expected status not to be 'Sending action...' for local client action, got %q", m.Status())
+	}
+	if strings.Contains(viewContent, "Sending action...") {
+		t.Errorf("expected view not to contain 'Sending action...', got:\n%s", viewContent)
 	}
 }
 

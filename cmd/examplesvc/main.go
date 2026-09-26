@@ -40,21 +40,21 @@ func (e *ExampleExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorC
 		userText := extractUserText(msg)
 		actionName, sourceID, ctxValues, isAction := extractUserAction(msg)
 
-		var responseText string
+		var agentMsg *a2a.Message
 
 		if isAction {
 			log.Printf("[examplesvc] Received action event: action=%s, source=%s, context=%v", actionName, sourceID, ctxValues)
 			switch actionName {
 			case "return_to_showcase", "refresh_data":
-				responseText = showcaseCard()
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(showcaseCard()))
 			case "refresh_weather":
 				city := "San Francisco, CA"
 				if c, ok := ctxValues["city"].(string); ok && c != "" {
 					city = c
 				}
-				responseText = weatherCard(city, 72, "Sunny")
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(weatherCard(city, 72, "Sunny")))
 			default:
-				responseText = actionResultCard(actionName, sourceID, ctxValues)
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(actionResultCard(actionName, sourceID, ctxValues)))
 			}
 		} else {
 			cleanText := strings.ToLower(strings.TrimSpace(userText))
@@ -62,22 +62,23 @@ func (e *ExampleExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorC
 
 			switch {
 			case cleanText == "buttons" || cleanText == "button":
-				responseText = buttonsCard()
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(buttonsCard()))
 			case cleanText == "form" || cleanText == "inputs" || cleanText == "input":
-				responseText = formCard()
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(formCard()))
 			case cleanText == "weather":
-				responseText = weatherCard("San Francisco, CA", 68, "Partly Cloudy")
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(weatherCard("San Francisco, CA", 68, "Partly Cloudy")))
+			case cleanText == "multipart" || cleanText == "multi" || cleanText == "multipart-card":
+				agentMsg = multipartMessage()
 			case cleanText == "help":
-				responseText = "Available A2UI demo commands:\n- `showcase` or `all` : View the full interactive A2UI showcase\n- `buttons` : Test action buttons and events\n- `form` : Test editable text fields, check boxes, sliders\n- `weather` : Test dynamic card widgets\n- `ping` : Test server responsiveness"
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Available A2UI demo commands:\n- `showcase` or `all` : View the full interactive A2UI showcase\n- `buttons` : Test action buttons and events\n- `form` : Test editable text fields, check boxes, sliders\n- `weather` : Test dynamic card widgets\n- `multipart` : Test multi-part A2A response (text + A2UI DataPart)\n- `ping` : Test server responsiveness"))
 			case cleanText == "ping":
-				responseText = "Pong! 🏓 The A2UI test agent is alive and ready.\n\n" + buttonsCard()
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Pong! 🏓 The A2UI test agent is alive and ready.\n\n"+buttonsCard()))
 			default:
-				responseText = showcaseCard()
+				agentMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(showcaseCard()))
 			}
 		}
 
 		// Yield agent response message with ContextID preserved and empty TaskID
-		agentMsg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(responseText))
 		agentMsg.ContextID = execCtx.ContextID
 		yield(agentMsg, nil)
 	}

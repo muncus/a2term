@@ -2,10 +2,13 @@
 
 `a2term` is a terminal client built in Go that communicates with AI agents over the [A2A (Agent-to-Agent) Protocol](https://github.com/a2aproject/a2a-go) and renders interactive [A2UI](https://github.com/tmc/a2ui) elements directly in the terminal using [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [a2tea](https://github.com/joestump-agent/a2tea).
 
+[Check out the Demo](demo.gif)
+
 ## Features
 
 - **A2A Protocol Communication**: Connects to remote A2A agents via Agent Card resolution (`.well-known/agent-card.json`) or direct JSON-RPC endpoints.
-- **Embedded A2UI Rendering**: Scans agent responses for `<a2ui-json>` blocks and renders interactive UI surfaces (cards, buttons, text fields, checkboxes, sliders, choice pickers, tabs, modals).
+- **A2UI Rendering**: [A2UI](http://a2ui.org) surfaces are automatically
+    rendered in their own tab, separate from the agent chat.
 - **Full Keyboard Navigation & Focus**:
   - `Tab`: Switch focus to active A2UI surfaces and cycle through interactive controls.
   - `Shift+Tab` or `Ctrl+F`: Return focus to the chat input prompt.
@@ -19,9 +22,13 @@
 
 Ensure you have Go 1.24+ installed.
 
+`go install github.com/muncus/a2term/cmd/a2term@latest`
+
+or
+
 ```bash
 # Clone and build
-git clone https://github.com/joestump-agent/a2term.git
+git clone https://github.com/muncus/a2term.git
 cd a2term
 go build -o a2term ./cmd/a2term
 ```
@@ -67,23 +74,6 @@ While in the chat interface, you can run commands:
 - `/card <url>`: Resolve and connect using an Agent Card URL.
 - `/auth <token>`: Set or update bearer authorization token.
 - `/quit` or `/exit`: Exit the application.
-
-## Keybindings
-
-| Key | Description |
-| --- | --- |
-| `Tab` | Focus interactive A2UI surface / cycle controls |
-| `Shift+Tab` | Return focus to chat input |
-| `Ctrl+F` | Toggle focus between input and surface |
-| `Esc` | Close open modal / return focus to input |
-| `Enter` | Send message / activate focused button |
-| `PgUp` / `PgDn` | Scroll viewport half page up / down |
-| `Ctrl+U` / `Ctrl+D` | Scroll viewport half page up / down |
-| `Shift+Up` / `Shift+Down` | Scroll viewport 3 lines up / down |
-| `Ctrl+Home` / `Ctrl+End` | Jump to top / bottom of scrollback history |
-| `Home` / `End` | Jump to top / bottom (when input is empty or surface focused) |
-| `Mouse Wheel` | Smoothly scroll viewport up / down |
-| `Ctrl+C` | Quit application |
 
 ## Architecture
 

@@ -16,7 +16,10 @@ package agent
 
 import (
 	"context"
+
 	"errors"
+
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 // ErrAuthFailed is a sentinel error indicating that authentication or authorization failed.
@@ -39,16 +42,15 @@ type Client interface {
 	// ResetSession clears active conversational and task identifiers.
 	ResetSession()
 
-	// SendMessage sends a user message and returns the response text.
-	SendMessage(ctx context.Context, text string) (string, error)
+	// SendMessage sends a user message and returns the response parts.
+	SendMessage(ctx context.Context, text string) ([]*a2a.Part, error)
 
 	// StreamMessage sends a message and yields streaming chunks as they arrive.
-	StreamMessage(ctx context.Context, text string, onChunk func(chunk string, isFinal bool, err error)) error
+	StreamMessage(ctx context.Context, text string, onChunk func(parts []*a2a.Part, isFinal bool, err error)) error
 
 	// SendActionEvent dispatches an A2UI interaction event (e.g. button click or form submit) back to the agent.
-	SendActionEvent(ctx context.Context, actionName string, sourceID string, contextValues map[string]any) (string, error)
+	SendActionEvent(ctx context.Context, actionName string, sourceID string, contextValues map[string]any) ([]*a2a.Part, error)
 
 	// SendA2UIAction dispatches a full A2UI ActionEvent with optional surfaceID and client data model back to the agent.
-	SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) (string, error)
+	SendA2UIAction(ctx context.Context, actionName string, surfaceID string, sourceID string, contextValues map[string]any, clientDataModel map[string]any) ([]*a2a.Part, error)
 }
-
