@@ -15,6 +15,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,7 +27,6 @@ import (
 	"github.com/joestump-agent/a2tea/render"
 	tmca2ui "github.com/tmc/a2ui"
 
-	a2aclient "github.com/muncus/a2term/pkg/a2a"
 	"github.com/muncus/a2term/pkg/a2ui"
 	"github.com/muncus/a2term/pkg/agent"
 )
@@ -44,6 +44,7 @@ func (m *Model) handleAgentResponse(msg agentResponseMsg) (tea.Model, tea.Cmd) {
 	if wasAtBottom {
 		m.chatViewport.GotoBottom()
 	}
+	m.logsViewport.GotoBottom()
 	m.syncActiveViewportMirror()
 	return *m, nil
 }
@@ -54,7 +55,13 @@ func (m *Model) handleStreamChunk(msg agentStreamChunkMsg) (tea.Model, tea.Cmd) 
 
 	chunkText := msg.chunk
 	if chunkText == "" && len(msg.parts) > 0 {
-		chunkText = a2aclient.ExtractPartsText(msg.parts)
+		var texts []string
+		for _, p := range msg.parts {
+			if p != nil && p.Text() != "" {
+				texts = append(texts, p.Text())
+			}
+		}
+		chunkText = strings.Join(texts, "")
 	}
 
 	if len(msg.parts) > 0 {
@@ -109,6 +116,7 @@ func (m *Model) handleStreamChunk(msg agentStreamChunkMsg) (tea.Model, tea.Cmd) 
 	if wasAtBottom {
 		m.chatViewport.GotoBottom()
 	}
+	m.logsViewport.GotoBottom()
 	m.syncActiveViewportMirror()
 	return *m, nil
 }
@@ -173,25 +181,32 @@ func (m *Model) appendAgentResponseParts(parts []*a2a.Part) {
 			continue
 		}
 
-		// 2. Multimodal raw data (e.g. image)
+		// 2. Structured Data part (tool calls, data payloads): send to logs
+		if d := part.Data(); d != nil {
+			logContent := formatDataPartLog(d)
+			m.items = append(m.items, NewToolCallItem(uuid.NewString(), logContent))
+			continue
+		}
+
+		// 3. Multimodal raw data
 		if r := part.Raw(); len(r) > 0 && part.Text() == "" {
-			label := fmt.Sprintf("[Binary data: %s (%d bytes)]", part.MediaType, len(r))
 			if strings.HasPrefix(part.MediaType, "image/") {
 				name := part.Filename
 				if name == "" {
 					name = "image"
 				}
-				label = fmt.Sprintf("[🖼️ Image: %s (%s, %d bytes)]", name, part.MediaType, len(r))
+				label := fmt.Sprintf("[🖼️ Image: %s (%s, %d bytes)]", name, part.MediaType, len(r))
+				m.items = append(m.items, NewAgentTextItem(uuid.NewString(), label))
+			} else {
+				// Non-image raw data: send to logs
+				label := fmt.Sprintf("Raw data: %s (%d bytes)", part.MediaType, len(r))
+				m.items = append(m.items, NewToolCallItem(uuid.NewString(), label))
 			}
-			m.items = append(m.items, NewAgentTextItem(uuid.NewString(), label))
 			continue
 		}
 
-		// 3. Text part: check for embedded A2UI server messages or conversational prose
+		// 4. Text part: check for embedded A2UI server messages or conversational prose
 		text := part.Text()
-		if text == "" {
-			text = a2aclient.ExtractPartsText([]*a2a.Part{part})
-		}
 		if text == "" {
 			continue
 		}
@@ -205,6 +220,24 @@ func (m *Model) appendAgentResponseParts(parts []*a2a.Part) {
 		}
 	}
 }
+
+func formatDataPartLog(d any) string {
+	if s, ok := d.(string); ok {
+		var parsed any
+		if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+			if b, err := json.MarshalIndent(parsed, "", "  "); err == nil {
+				return string(b)
+			}
+		}
+		return s
+	}
+	b, err := json.MarshalIndent(d, "", "  ")
+	if err == nil {
+		return string(b)
+	}
+	return fmt.Sprintf("%v", d)
+}
+
 
 func (m *Model) processServerMessages(msgs []tmca2ui.ServerMessage) {
 	if m.dispatcher == nil {

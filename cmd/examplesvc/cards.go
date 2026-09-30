@@ -488,59 +488,6 @@ func actionResultCard(actionName string, sourceID string, ctxValues map[string]a
 		sb.WriteString("Context Data:\n```json\n" + string(ctxJSON) + "\n```\n\n")
 	}
 
-	components := []map[string]any{
-		{
-			"component": "Card",
-			"id":        "root",
-			"child":     "result_col",
-		},
-		{
-			"component": "Column",
-			"id":        "result_col",
-			"children": []string{
-				"res_title",
-				"res_msg",
-				"res_div",
-				"res_btn",
-			},
-		},
-		{
-			"component": "Text",
-			"id":        "res_title",
-			"text":      fmt.Sprintf("Action Processed: %s", actionName),
-			"variant":   "h1",
-		},
-		{
-			"component": "Text",
-			"id":        "res_msg",
-			"text":      fmt.Sprintf("Successfully handled event from '%s'. The server state has been updated.", sourceID),
-			"variant":   "body",
-		},
-		{
-			"component": "Divider",
-			"id":        "res_div",
-		},
-		{
-			"component": "Button",
-			"id":        "res_btn",
-			"child":     "res_btn_text",
-			"action": map[string]any{
-				"event": map[string]any{
-					"name": "return_to_showcase",
-					"context": map[string]any{
-						"previous_action": actionName,
-					},
-				},
-			},
-		},
-		{
-			"component": "Text",
-			"id":        "res_btn_text",
-			"text":      "🔙 Return to Showcase",
-		},
-	}
-
-	sb.WriteString(wrapA2UI("result-surface", components))
 	return sb.String()
 }
 
@@ -700,4 +647,3 @@ func multipartMessage() *a2a.Message {
 
 	return a2a.NewMessage(a2a.MessageRoleAgent, textPart, uiPart)
 }
-

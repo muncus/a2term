@@ -96,6 +96,16 @@ func (m Model) LogsViewportYOffset() int {
 	return m.logsViewport.YOffset()
 }
 
+// LogsViewportContentForTest returns the rendered content of the logs viewport.
+func (m Model) LogsViewportContentForTest() string {
+	return m.logsViewport.View()
+}
+
+// ChatViewportContentForTest returns the rendered content of the chat viewport.
+func (m Model) ChatViewportContentForTest() string {
+	return m.chatViewport.View()
+}
+
 // SetOpenBrowserFuncForTest overrides openBrowserFunc for testing and returns a cleanup func.
 func SetOpenBrowserFuncForTest(fn func(string) error) func() {
 	orig := openBrowserFunc

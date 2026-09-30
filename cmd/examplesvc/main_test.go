@@ -30,11 +30,10 @@ import (
 
 func TestCardsParseWithA2UI(t *testing.T) {
 	cards := map[string]string{
-		"showcase":     showcaseCard(),
-		"buttons":      buttonsCard(),
-		"form":         formCard(),
-		"weather":      weatherCard("New York, NY", 75, "Clear"),
-		"actionResult": actionResultCard("submit_form", "btn_submit", map[string]any{"user": "alice"}),
+		"showcase": showcaseCard(),
+		"buttons":  buttonsCard(),
+		"form":     formCard(),
+		"weather":  weatherCard("New York, NY", 75, "Clear"),
 	}
 
 	for name, cardText := range cards {

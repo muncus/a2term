@@ -32,6 +32,7 @@ const (
 	KindAction
 	KindError
 	KindDiagnostic
+	KindToolCall
 )
 
 // DiagnosticInfo provides structured troubleshooting information for connection or transport errors.
@@ -128,3 +129,14 @@ func NewDiagnosticItem(id string, diag DiagnosticInfo) FeedItem {
 		Timestamp:  time.Now(),
 	}
 }
+
+// NewToolCallItem creates a feed item for structured tool calls, data payloads, or raw parts.
+func NewToolCallItem(id, text string) FeedItem {
+	return FeedItem{
+		ID:        id,
+		Kind:      KindToolCall,
+		Content:   text,
+		Timestamp: time.Now(),
+	}
+}
+

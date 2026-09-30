@@ -448,6 +448,10 @@ func (m *Model) updateLogsViewportContent() {
 			prefix := m.styles.LogPrefix.Foreground(lipgloss.Color("#F9E2AF")).Render("[ACTION]")
 			sb.WriteString(fmt.Sprintf("%s %s %s\n", timestamp, prefix, item.Content))
 
+		case KindToolCall:
+			prefix := m.styles.LogPrefix.Foreground(lipgloss.Color("#89B4FA")).Render("[TOOL]")
+			sb.WriteString(fmt.Sprintf("%s %s %s\n", timestamp, prefix, item.Content))
+
 		case KindError:
 			prefix := m.styles.LogPrefix.Foreground(lipgloss.Color("#F43F5E")).Render("[ERROR]")
 			sb.WriteString(fmt.Sprintf("%s %s %s\n", timestamp, prefix, item.Content))

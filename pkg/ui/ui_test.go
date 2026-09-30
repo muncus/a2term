@@ -1289,3 +1289,64 @@ func TestModelMultiPartResponse(t *testing.T) {
 		t.Errorf("expected to find agent surface item for multi-part response")
 	}
 }
+
+func TestModelDataAndRawPartsInLogsNotChat(t *testing.T) {
+	model := ui.NewModel(ui.Config{
+		AgentURL: "http://localhost:8080",
+	})
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	model = updated.(ui.Model)
+
+	// Create parts:
+	// 1. A text part (should go to chat feed)
+	textPart := a2a.NewTextPart("Here are the search results:")
+
+	// 2. A data part representing a tool call / structured payload (should go to logs, not chat)
+	toolPayload := map[string]any{
+		"name": "web_search",
+		"arguments": map[string]any{
+			"query": "weather in Seattle",
+		},
+	}
+	dataPart := a2a.NewDataPart(toolPayload)
+
+	// 3. A raw binary part (should go to logs, not chat)
+	rawPart := a2a.NewRawPart([]byte("raw-stream-binary-payload"))
+	rawPart.MediaType = "application/octet-stream"
+
+	parts := []*a2a.Part{textPart, dataPart, rawPart}
+
+	updated, _ = model.Update(ui.NewAgentResponsePartsMsgForTest(parts))
+	model = updated.(ui.Model)
+
+	chatContent := model.ChatViewportContentForTest()
+	logsContent := model.LogsViewportContentForTest()
+
+	// Chat feed should contain the text message
+	if !strings.Contains(chatContent, "Here are the search results:") {
+		t.Errorf("expected chat viewport to contain conversational text, got: %q", chatContent)
+	}
+
+	// Chat feed should NOT contain the tool call or raw payload
+	if strings.Contains(chatContent, "web_search") || strings.Contains(chatContent, "weather in Seattle") {
+		t.Errorf("chat viewport should NOT contain tool call data, got: %q", chatContent)
+	}
+	if strings.Contains(chatContent, "raw-stream-binary-payload") || strings.Contains(chatContent, "Raw data:") {
+		t.Errorf("chat viewport should NOT contain raw data, got: %q", chatContent)
+	}
+
+	// Logs viewport MUST contain the tool call indented JSON and raw data entry
+	if !strings.Contains(logsContent, "[TOOL]") {
+		t.Errorf("expected logs viewport to contain [TOOL] prefix, got: %q", logsContent)
+	}
+	if !strings.Contains(logsContent, `"name": "web_search"`) {
+		t.Errorf("expected logs viewport to contain indented JSON tool call, got: %q", logsContent)
+	}
+	if !strings.Contains(logsContent, `"query": "weather in Seattle"`) {
+		t.Errorf("expected logs viewport to contain indented JSON arguments, got: %q", logsContent)
+	}
+	if !strings.Contains(logsContent, "Raw data: application/octet-stream") {
+		t.Errorf("expected logs viewport to contain raw data log entry, got: %q", logsContent)
+	}
+}
+
